@@ -1,0 +1,18 @@
+name: Windows
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      name: windows-x64
+      runner: windows-latest
+      target: x86_64-pc-windows-msvc
+      bundles: nsis,msi
+      target_dir: C:\t

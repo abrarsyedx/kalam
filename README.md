@@ -4,6 +4,12 @@
 
 <h1 align="center">Kalam</h1>
 
+<p align="center">
+  <a href="https://github.com/abrarsyedx/kalam/actions/workflows/windows.yml"><img src="https://github.com/abrarsyedx/kalam/actions/workflows/windows.yml/badge.svg" alt="Windows build"></a>
+  <a href="https://github.com/abrarsyedx/kalam/actions/workflows/macos-apple-silicon.yml"><img src="https://github.com/abrarsyedx/kalam/actions/workflows/macos-apple-silicon.yml/badge.svg" alt="macOS (Apple Silicon) build"></a>
+  <a href="https://github.com/abrarsyedx/kalam/actions/workflows/macos-intel.yml"><img src="https://github.com/abrarsyedx/kalam/actions/workflows/macos-intel.yml/badge.svg" alt="macOS (Intel) build"></a>
+</p>
+
 <p align="center"><b>Offline meeting recorder &amp; live transcriber for Windows and macOS.</b><br>
 Records your microphone and your computer's audio (Microsoft Teams, Zoom, Google Meet, any app or browser tab),
 saves it as <b>MP3</b>, and writes a live transcript that is saved as a <b>Word (.docx)</b> document.
@@ -15,7 +21,7 @@ Everything runs on your device. No account, no cloud, no internet connection.</p
 
 ## Features
 
-- **Record and transcribe with one click.** Large **Record / Pause / Stop** buttons, a running timer and live level meters for the microphone and the computer's audio.
+- **Record and transcribe with one click.** **Record / Pause / Stop** buttons, a running timer and live level meters for the microphone and the computer's audio.
 - **Captures meeting audio without extra drivers.**
   - Windows 10/11: WASAPI loopback, so whatever the PC plays is recorded.
   - macOS 14.6+: a Core Audio process tap, so no BlackHole or Soundflower is needed.
@@ -38,7 +44,7 @@ Everything runs on your device. No account, no cloud, no internet connection.</p
   - You can tell Kalam how many people are in the meeting, or let it work it out.
   - The older **You / Others** labelling (microphone vs computer audio) is still available.
 - **Files saved automatically** into a folder you choose: `Kalam_2026-10-16_09-30-00.mp3` and `Kalam_2026-10-16_09-30-00.docx`. The transcript is re-saved after every sentence, so a crash or power cut loses almost nothing.
-- **EU blue & yellow design** with light and dark themes that follow the system.
+- **Blue & yellow design** with light and dark themes that follow the system.
 - **Open source (MIT)** and one code base: Rust core plus a web UI via [Tauri 2](https://tauri.app).
 
 ### Why Whisper and not a general LLM?
@@ -292,7 +298,7 @@ KALAM_TEST_WAV=jfk.wav cargo test --release bench_models -- --ignored --nocaptur
 
 ## Building installers on GitHub
 
-The workflow in `.github/workflows/build.yml` builds **Windows x64**, **macOS Apple Silicon** and **macOS Intel** installers on GitHub's machines, installing the Vulkan SDK and Ninja for Windows. You don't need a Mac to get the macOS version.
+The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **macOS Apple Silicon** (`macos-apple-silicon.yml`) and **macOS Intel** (`macos-intel.yml`) installers on GitHub's machines, each with its own status badge at the top of this README. They share their steps in `build.yml`, installing the Vulkan SDK and Ninja for Windows. You don't need a Mac to get the macOS version.
 
 1. Create an empty repository on GitHub (e.g. `kalam`), then push:
    ```bash
@@ -303,7 +309,7 @@ The workflow in `.github/workflows/build.yml` builds **Windows x64**, **macOS Ap
    git remote add origin https://github.com/<your-account>/kalam.git
    git push -u origin main
    ```
-2. Open the repository's **Actions** tab. When the *Build installers* run finishes (~20–30 min), download the installers from its **Artifacts** section.
+2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
 3. To publish a release, push a version tag. A **draft release** with all installers attached is created; review it and click **Publish**:
    ```bash
    git tag v1.3.0

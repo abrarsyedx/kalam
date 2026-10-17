@@ -1,0 +1,17 @@
+name: macOS (Apple Silicon)
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      name: macos-apple-silicon
+      runner: macos-latest
+      target: aarch64-apple-darwin
+      bundles: app,dmg

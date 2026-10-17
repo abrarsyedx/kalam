@@ -1,47 +1,42 @@
-# Builds Kalam installers for Windows and macOS.
-#  - Every push / pull request: installers are attached to the workflow run
+# Shared build steps for one platform. Not run on its own: the workflows
+# windows.yml, macos-apple-silicon.yml and macos-intel.yml call it (one per
+# platform, so each gets its own status badge in the README).
+#  - Every push / pull request: the installers are attached to the workflow run
 #    as downloadable artifacts (Actions tab -> the run -> "Artifacts").
-#  - Pushing a tag like v1.2.0: a draft GitHub Release is created with all
+#  - Pushing a tag like v1.3.0: a draft GitHub Release is created with all
 #    installers attached; review it and press "Publish".
 name: Build installers
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      name:
+        type: string
+        required: true
+      runner:
+        type: string
+        required: true
+      target:
+        type: string
+        required: true
+      bundles:
+        type: string
+        required: true
+      # Windows: whisper.cpp's Vulkan build nests folders deeply; keep the build
+      # folder path short (Windows 260-character limit).
+      target_dir:
+        type: string
+        default: target
 
 permissions:
   contents: write
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows-x64
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis,msi
-            # whisper.cpp's Vulkan build nests folders deeply; keep the build
-            # folder path short (Windows 260-character limit).
-            target_dir: C:\t
-          - name: macos-apple-silicon
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            bundles: app,dmg
-            target_dir: target
-          - name: macos-intel
-            runner: macos-latest
-            target: x86_64-apple-darwin
-            bundles: app,dmg
-            target_dir: target
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    name: ${{ inputs.name }}
+    runs-on: ${{ inputs.runner }}
     env:
-      CARGO_TARGET_DIR: ${{ matrix.target_dir }}
+      CARGO_TARGET_DIR: ${{ inputs.target_dir }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,12 +47,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ inputs.target }}
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> ${{ matrix.target_dir }}
-          key: ${{ matrix.target }}
+          workspaces: src-tauri -> ${{ inputs.target_dir }}
+          key: ${{ inputs.target }}
 
       # Windows: GPU support is built with Vulkan (needs the Vulkan SDK) and
       # whisper.cpp is built with Ninja (see src-tauri/.cargo/config.toml).
@@ -89,7 +84,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          args: --target ${{ inputs.target }} --bundles ${{ inputs.bundles }}
           # Only create a (draft) release when a version tag was pushed.
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: Kalam ${{ github.ref_name }}
@@ -102,11 +97,11 @@ jobs:
           dir="${CARGO_TARGET_DIR}"
           case "$dir" in /*|?:*|?:\\*) ;; *) dir="src-tauri/$dir" ;; esac
           mkdir -p out
-          find "$dir/${{ matrix.target }}/release/bundle" \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} out/ \;
+          find "$dir/${{ inputs.target }}/release/bundle" \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} out/ \;
           ls -l out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kalam-${{ matrix.name }}
+          name: kalam-${{ inputs.name }}
           path: out/*
           if-no-files-found: error
