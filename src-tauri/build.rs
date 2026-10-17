@@ -38,6 +38,9 @@ fn main() {
         ensure_vulkan_loader();
         ensure_sherpa_dlls();
     }
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        link_clang_runtime();
+    }
     let mut attrs = tauri_build::Attributes::new();
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         // Tauri needs Common Controls v6 on Windows. tauri-build embeds that
@@ -56,6 +59,30 @@ fn main() {
 
 /// Download a model once if it is missing. curl ships with Windows 10+,
 /// macOS and every Linux distro.
+/// macOS: whisper.cpp's Metal code checks the macOS version at run time
+/// (`@available`), which calls `__isPlatformVersionAtLeast` from clang's runtime
+/// library. rustc links with `-nodefaultlibs`, so that library is left out
+/// unless it is named explicitly.
+fn link_clang_runtime() {
+    let resource_dir = Command::new("clang")
+        .arg("--print-resource-dir")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let Some(dir) = resource_dir else {
+        println!("cargo:warning=clang not found; linking may fail with \"___isPlatformVersionAtLeast\" undefined");
+        return;
+    };
+    // A universal archive: covers both Apple Silicon and Intel builds.
+    let lib = Path::new(&dir).join("lib/darwin/libclang_rt.osx.a");
+    if lib.is_file() {
+        println!("cargo:rustc-link-arg={}", lib.display());
+    } else {
+        println!("cargo:warning={} not found; linking may fail with \"___isPlatformVersionAtLeast\" undefined", lib.display());
+    }
+}
+
 fn ensure_model(file: &str, min_bytes: u64) {
     let path_str = format!("{MODEL_DIR}/{file}");
     println!("cargo:rerun-if-changed={path_str}");
