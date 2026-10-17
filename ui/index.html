@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kalam</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-nib" viewBox="0 0 1024 1024">
+      <path d="M168 736 Q183 700 198 736 Q213 820 228 736 Q243 600 258 736 Q273 900 288 736 Q303 584 318 736 Q333 848 348 736 Q363 680 378 736 Q393 770 408 736" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+      <g transform="translate(408 736) rotate(35) translate(-512 -880)">
+        <path d="M512 880 L378 586 Q356 538 384 492 L436 330 L588 330 L640 492 Q668 538 646 586 Z" fill="var(--yellow)"/>
+        <rect x="420" y="262" width="184" height="72" rx="18" fill="currentColor"/>
+        <path d="M512 880 L512 600" stroke="var(--logo-cut, var(--surface))" stroke-width="22" stroke-linecap="round"/>
+        <circle cx="512" cy="566" r="40" fill="var(--logo-cut, var(--surface))"/>
+      </g>
+    </symbol>
+    <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></g></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></g></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></g></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark"><use href="#i-nib"/></svg>
+      <span class="brand-name">Kalam</span>
+    </div>
+    <div class="topbar-right">
+      <label id="model-chip" class="chip model-switch" title="Speech model: switch between the bundled models">
+        <span class="dot"></span>
+        <select id="model-select" aria-label="Speech model"></select>
+        <span id="model-state" class="model-state"></span>
+        <span id="gpu-badge" class="gpu-badge" hidden></span>
+        <svg class="chev" aria-hidden="true"><use href="#i-chev"/></svg>
+      </label>
+      <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
+        <svg><use href="#i-gear"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="console">
+    <div class="transport">
+      <button id="btn-record" class="btn btn-record" title="Start recording and transcribing">
+        <svg><use href="#i-record"/></svg><span>Record</span>
+      </button>
+      <button id="btn-pause" class="btn" disabled title="Pause recording and transcribing">
+        <svg><use href="#i-pause"/></svg><span>Pause</span>
+      </button>
+      <button id="btn-stop" class="btn" disabled title="Stop and save the .mp3 and .docx">
+        <svg><use href="#i-stop"/></svg><span>Stop</span>
+      </button>
+    </div>
+    <div class="clock">
+      <span id="state-label" class="state-label">Ready</span>
+      <span id="timer" class="timer">00:00:00</span>
+    </div>
+    <div class="meters">
+      <div class="meter" id="meter-mic" title="Microphone level">
+        <svg><use href="#i-mic"/></svg>
+        <div class="bar"><div class="fill"></div></div>
+      </div>
+      <div class="meter" id="meter-sys" title="Computer audio level (Teams, Zoom, Meet…)">
+        <svg><use href="#i-speaker"/></svg>
+        <div class="bar"><div class="fill"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <main id="paper" class="paper" aria-live="polite">
+    <div id="empty" class="empty">
+      <svg class="empty-mark"><use href="#i-nib"/></svg>
+      <h1>Ready when you are.</h1>
+      <p>Press <strong>Record</strong> to capture your microphone and computer audio — Teams, Zoom, Google&nbsp;Meet.
+        Kalam writes down what it hears, live, entirely on this device.</p>
+    </div>
+    <div id="lines" class="lines"></div>
+    <p id="preview" class="line preview" hidden><span class="text"></span></p>
+  </main>
+
+  <footer class="footer">
+    <div class="saving-to">
+      <svg><use href="#i-folder"/></svg>
+      <span>Saving to</span>
+      <button id="btn-folder" class="link" title="Open folder"></button>
+    </div>
+    <div id="polish" class="polish" hidden>
+      <span id="polish-text">Polishing transcript…</span>
+      <div class="bar polish-bar"><div class="fill"></div></div>
+      <button id="btn-polish-skip" class="link small" title="Keep the live transcript and skip polishing">Skip</button>
+    </div>
+    <div id="saved" class="saved" hidden>
+      <span class="saved-label">Saved</span>
+      <button id="btn-open-docx" class="pill"><svg><use href="#i-doc"/></svg>Transcript</button>
+      <button id="btn-open-mp3" class="pill"><svg><use href="#i-note"/></svg>Recording</button>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <dialog id="settings" class="settings">
+    <form id="settings-form" method="dialog">
+      <header class="dlg-head">
+        <h2>Settings</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
+      </header>
+
+      <div class="dlg-body">
+        <fieldset>
+          <legend>Save location</legend>
+          <p class="hint">Recordings (.mp3) and transcripts (.docx) are saved here.</p>
+          <div class="row">
+            <input id="f-output" type="text" spellcheck="false" />
+            <button type="button" id="f-output-browse" class="btn btn-small">Browse…</button>
+          </div>
+          <button type="button" id="f-output-reset" class="link small">Use default (Documents/Kalam)</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Audio sources</legend>
+          <label class="check"><input id="f-mic" type="checkbox" /> <span>Microphone</span></label>
+          <select id="f-mic-device" class="indent"></select>
+          <label class="check"><input id="f-sys" type="checkbox" /> <span>Computer audio <em>(Teams, Zoom, Google Meet, browser…)</em></span></label>
+          <select id="f-sys-device" class="indent"></select>
+          <p class="hint indent" id="sys-hint"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Transcription</legend>
+          <div class="field">
+            <span>Speech model</span>
+            <div class="model-options" role="radiogroup" aria-label="Speech model">
+              <label class="model-option">
+                <input type="radio" name="f-model" value="accurate" />
+                <span><b>Accurate</b> · Whisper Large-v3 Turbo
+                  <small>Best accuracy, 99 languages. Needs a recent CPU to keep up live.</small></span>
+              </label>
+              <label class="model-option">
+                <input type="radio" name="f-model" value="fast" />
+                <span><b>Fast</b> · Whisper Small (English)
+                  <small>Lighter and quicker. For older laptops or long meetings on battery.</small></span>
+              </label>
+              <label class="model-option">
+                <input type="radio" name="f-model" value="custom" />
+                <span><b>Custom model file</b>
+                  <small id="f-model-path">Any whisper.cpp ggml-*.bin file</small></span>
+              </label>
+            </div>
+            <button type="button" id="f-model-browse" class="btn btn-small">Choose model file…</button>
+          </div>
+          <label class="field">
+            <span>Language</span>
+            <select id="f-language"></select>
+            <span class="hint" id="lang-hint"></span>
+          </label>
+          <label class="field">
+            <span>CPU threads</span>
+            <select id="f-threads"></select>
+          </label>
+          <label class="check"><input id="f-preview" type="checkbox" /> <span>Show live preview while someone is speaking</span></label>
+          <label class="field">
+            <span>Speaker labels</span>
+            <select id="f-speakers">
+              <option value="voice">By voice: Speaker 1, Speaker 2, … (recommended)</option>
+              <option value="source">By audio source: You (microphone) / Others (computer audio)</option>
+              <option value="off">Off</option>
+            </select>
+            <span class="hint">Live labels are provisional; after you press Stop, Kalam compares all voices in the recording and corrects them.</span>
+          </label>
+          <label class="field indent-field" id="f-expected-row">
+            <span>Number of speakers</span>
+            <select id="f-expected"></select>
+            <span class="hint">Set it if you know how many people will talk; it makes the labels more reliable.</span>
+          </label>
+          <label class="field">
+            <span>Names &amp; terms</span>
+            <textarea id="f-vocab" rows="3" maxlength="600" spellcheck="false"
+              placeholder="e.g. Maria Rossi, Kubernetes, ACME GmbH, Q3 roadmap"></textarea>
+            <span class="hint">People, companies and jargon from your meetings, separated by commas. Kalam nudges the speech model to spell them this way.</span>
+          </label>
+          <label class="field">
+            <span>Polish transcript after recording</span>
+            <select id="f-polish">
+              <option value="auto">Automatic: when a graphics card is in use (recommended)</option>
+              <option value="always">Always (slow without a graphics card)</option>
+              <option value="off">Off: keep the live transcript</option>
+            </select>
+            <span class="hint">After you press Stop, Kalam re-transcribes the whole recording more carefully and updates the .docx. Takes about a quarter of the meeting's length with a graphics card.</span>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Graphics card</legend>
+          <p class="gpu-status" id="gpu-status">Checking…</p>
+          <label class="field">
+            <span>Use the graphics card (GPU) for speech recognition</span>
+            <select id="f-gpu">
+              <option value="auto">Automatic: if it passes Kalam's test (recommended)</option>
+              <option value="off">Off: always use the processor (CPU)</option>
+            </select>
+          </label>
+          <button type="button" id="f-gpu-recheck" class="btn btn-small">Test graphics card again</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Recording</legend>
+          <label class="field">
+            <span>MP3 quality</span>
+            <select id="f-bitrate">
+              <option value="64">64 kbps — smallest files</option>
+              <option value="96">96 kbps</option>
+              <option value="128">128 kbps — recommended</option>
+              <option value="160">160 kbps</option>
+              <option value="192">192 kbps</option>
+              <option value="256">256 kbps — best</option>
+            </select>
+          </label>
+        </fieldset>
+        <p class="about" id="about"></p>
+      </div>
+
+      <footer class="dlg-foot">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" id="f-save" class="btn btn-primary">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

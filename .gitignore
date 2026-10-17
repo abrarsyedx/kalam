@@ -1,0 +1,17 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/schemas/
+dist/
+
+# The Whisper model (~190 MB) is larger than GitHub's 100 MB file limit.
+# It is downloaded automatically at build time (see src-tauri/build.rs).
+src-tauri/resources/models/*.bin
+
+.DS_Store
+Thumbs.db
+*.log
+
+# Downloaded at build time (Windows): the redistributable Vulkan loader.
+src-tauri/resources/vulkan/
+src-tauri/resources/sherpa/
+src-tauri/resources/speakers/

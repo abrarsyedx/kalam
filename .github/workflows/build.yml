@@ -1,0 +1,112 @@
+# Builds Kalam installers for Windows and macOS.
+#  - Every push / pull request: installers are attached to the workflow run
+#    as downloadable artifacts (Actions tab -> the run -> "Artifacts").
+#  - Pushing a tag like v1.2.0: a draft GitHub Release is created with all
+#    installers attached; review it and press "Publish".
+name: Build installers
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            # whisper.cpp's Vulkan build nests folders deeply; keep the build
+            # folder path short (Windows 260-character limit).
+            target_dir: C:\t
+          - name: macos-apple-silicon
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            target_dir: target
+          - name: macos-intel
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+            target_dir: target
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_TARGET_DIR: ${{ matrix.target_dir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> ${{ matrix.target_dir }}
+          key: ${{ matrix.target }}
+
+      # Windows: GPU support is built with Vulkan (needs the Vulkan SDK) and
+      # whisper.cpp is built with Ninja (see src-tauri/.cargo/config.toml).
+      - name: Install Vulkan SDK (Windows)
+        if: runner.os == 'Windows'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: latest
+          install_runtime: false
+          cache: true
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y --no-progress
+
+      - name: Cache Whisper models
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/resources/models
+          key: whisper-ggml-large-v3-turbo-q5_0+small.en-q5_1
+
+      - name: Download Whisper models (if not cached)
+        shell: bash
+        run: bash scripts/fetch-model.sh && ls -l src-tauri/resources/models
+
+      - run: npm ci
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          # Only create a (draft) release when a version tag was pushed.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: Kalam ${{ github.ref_name }}
+          releaseBody: Offline meeting recorder & live transcriber. See README for installation notes.
+          releaseDraft: true
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          dir="${CARGO_TARGET_DIR}"
+          case "$dir" in /*|?:*|?:\\*) ;; *) dir="src-tauri/$dir" ;; esac
+          mkdir -p out
+          find "$dir/${{ matrix.target }}/release/bundle" \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} out/ \;
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kalam-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error

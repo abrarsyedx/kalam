@@ -1,0 +1,16 @@
+{
+  "name": "kalam",
+  "version": "1.3.0",
+  "private": true,
+  "description": "Kalam (\"pen\") - offline meeting recorder and live transcriber",
+  "license": "MIT",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon assets/kalam-icon.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

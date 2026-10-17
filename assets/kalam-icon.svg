@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a44c2"/>
+      <stop offset="1" stop-color="#002a80"/>
+    </linearGradient>
+    <linearGradient id="nib" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe066"/>
+      <stop offset="0.55" stop-color="#ffcc00"/>
+      <stop offset="1" stop-color="#e6a800"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#bg)"/>
+  <!-- the sound wave the pen is writing -->
+  <path d="M168 736 Q183 700 198 736 Q213 820 228 736 Q243 600 258 736 Q273 900 288 736 Q303 584 318 736 Q333 848 348 736 Q363 680 378 736 Q393 770 408 736"
+        fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- fountain-pen nib, tip resting at the end of the wave -->
+  <g transform="translate(408 736) rotate(35) translate(-512 -880)">
+    <path d="M512 880 L378 586 Q356 538 384 492 L436 330 L588 330 L640 492 Q668 538 646 586 Z" fill="url(#nib)"/>
+    <rect x="420" y="262" width="184" height="72" rx="18" fill="#ffffff"/>
+    <path d="M512 880 L512 600" stroke="#002a80" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="512" cy="566" r="38" fill="#002a80"/>
+  </g>
+</svg>

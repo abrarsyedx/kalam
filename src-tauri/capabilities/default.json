@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Kalam main window. All file/folder access goes through Kalam's own Rust commands, so only core IPC and events are exposed to the UI.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

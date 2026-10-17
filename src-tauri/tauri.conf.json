@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kalam",
+  "version": "1.3.0",
+  "identifier": "io.github.kalam.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Kalam",
+        "width": 1000,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 520,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Kalam contributors",
+    "copyright": "MIT License",
+    "category": "Productivity",
+    "shortDescription": "Offline meeting recorder and live transcriber",
+    "longDescription": "Kalam records your microphone and computer audio (Teams, Zoom, Google Meet...) to MP3 and transcribes it live, fully offline, with Whisper Large-v3 Turbo or Whisper Small. Transcripts are saved as Word (.docx) documents.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/models/ggml-small.en-q5_1.bin": "models/ggml-small.en-q5_1.bin",
+      "resources/models/ggml-large-v3-turbo-q5_0.bin": "models/ggml-large-v3-turbo-q5_0.bin",
+      "resources/speakers/titanet_small.onnx": "speakers/titanet_small.onnx"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.2",
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": "-"
+    }
+  }
+}

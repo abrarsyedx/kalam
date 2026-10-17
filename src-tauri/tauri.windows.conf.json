@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "resources/models/ggml-small.en-q5_1.bin": "models/ggml-small.en-q5_1.bin",
+      "resources/models/ggml-large-v3-turbo-q5_0.bin": "models/ggml-large-v3-turbo-q5_0.bin",
+      "resources/vulkan/vulkan-1.dll": "vulkan-1.dll",
+      "resources/vulkan/VulkanRT-License.txt": "licenses/VulkanRT-License.txt",
+      "resources/speakers/titanet_small.onnx": "speakers/titanet_small.onnx",
+      "resources/sherpa/sherpa-onnx-c-api.dll": "sherpa-onnx-c-api.dll",
+      "resources/sherpa/onnxruntime.dll": "onnxruntime.dll",
+      "resources/sherpa/onnxruntime_providers_shared.dll": "onnxruntime_providers_shared.dll"
+    }
+  }
+}

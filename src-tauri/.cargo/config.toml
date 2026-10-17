@@ -1,0 +1,33 @@
+# Build settings for whisper.cpp, which whisper-rs-sys compiles with CMake.
+# whisper-rs-sys forwards every CMAKE_* / GGML_* environment variable to CMake
+# as a definition. NOTE: Cargo does not notice when these values change; after
+# editing them run `cargo clean -p whisper-rs-sys` (add --release for release).
+[env]
+# On Windows the `cmake` crate overwrites CMAKE_<LANG>_FLAGS_RELEASE for the
+# Visual Studio generator and strips every /O flag, so whisper.cpp would be
+# built WITHOUT optimisation (~10x slower transcription). Defining the flags
+# ourselves takes precedence. This spelling works for MSVC, clang and GCC; for
+# MSVC, -MD selects the same dynamic C runtime that Rust links against.
+CMAKE_C_FLAGS_RELEASE = "-O2 -DNDEBUG -MD"
+CMAKE_CXX_FLAGS_RELEASE = "-O2 -DNDEBUG -MD"
+# Debug builds (`npm run dev`) ask CMake for RelWithDebInfo instead.
+CMAKE_C_FLAGS_RELWITHDEBINFO = "-O2 -DNDEBUG -MD"
+CMAKE_CXX_FLAGS_RELWITHDEBINFO = "-O2 -DNDEBUG -MD"
+
+# Portable CPU baseline instead of "-march=native", so an installer built on
+# one machine (or a CI runner with AVX-512) runs on every user's machine.
+#  x86-64: AVX2 + FMA + F16C (Intel Haswell 2013+, AMD Zen / Excavator+).
+#  ARM64 : ARMv8.2 + dotprod + fp16 (Apple M1 and newer).
+# Each architecture ignores the other's options.
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+GGML_CPU_ARM_ARCH = "armv8.2-a+dotprod+fp16"
+
+# Windows: build whisper.cpp with Ninja instead of MSBuild. The Vulkan backend
+# compiles a helper tool in a deeply nested folder, and MSBuild fails there on
+# Windows' 260-character path limit. (cmake-rs reads this target-specific
+# variable, so macOS/Linux builds are unaffected.) Install: winget install Ninja-build.Ninja
+CMAKE_GENERATOR_x86_64_pc_windows_msvc = "Ninja"
