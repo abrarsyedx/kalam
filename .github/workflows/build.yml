@@ -26,7 +26,7 @@ on:
       # folder path short (Windows 260-character limit).
       target_dir:
         type: string
-        default: target
+        default: ""
 
 permissions:
   contents: write
@@ -36,7 +36,10 @@ jobs:
     name: ${{ inputs.name }}
     runs-on: ${{ inputs.runner }}
     env:
-      CARGO_TARGET_DIR: ${{ inputs.target_dir }}
+      # Always an absolute path: cargo reads a relative one from src-tauri/, but
+      # tauri-action reads it from the repository root and then can't find the
+      # installers. Default: src-tauri/target.
+      CARGO_TARGET_DIR: ${{ inputs.target_dir != '' && inputs.target_dir || format('{0}/src-tauri/target', github.workspace) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +54,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> ${{ inputs.target_dir }}
+          workspaces: src-tauri -> ${{ inputs.target_dir != '' && inputs.target_dir || 'target' }}
           key: ${{ inputs.target }}
 
       # Windows: GPU support is built with Vulkan (needs the Vulkan SDK) and
