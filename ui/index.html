@@ -25,6 +25,9 @@
     <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></g></symbol>
     <symbol id="i-speaker" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></g></symbol>
+    <symbol id="i-speaker-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13M6 12l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></g></symbol>
     <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-note" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></g></symbol>
@@ -66,14 +69,14 @@
       <span id="timer" class="timer">00:00:00</span>
     </div>
     <div class="meters">
-      <div class="meter" id="meter-mic" title="Microphone level">
+      <button type="button" class="meter" id="meter-mic" aria-pressed="false" disabled title="Microphone level">
         <svg><use href="#i-mic"/></svg>
         <div class="bar"><div class="fill"></div></div>
-      </div>
-      <div class="meter" id="meter-sys" title="Computer audio level (Teams, Zoom, Meet…)">
+      </button>
+      <button type="button" class="meter" id="meter-sys" aria-pressed="false" disabled title="Computer audio level (Teams, Zoom, Meet…)">
         <svg><use href="#i-speaker"/></svg>
         <div class="bar"><div class="fill"></div></div>
-      </div>
+      </button>
     </div>
   </section>
 
@@ -87,6 +90,9 @@
     <div id="lines" class="lines"></div>
     <p id="preview" class="line preview" hidden><span class="text"></span></p>
   </main>
+  <button id="btn-jump" class="jump" type="button" hidden title="Scroll to the latest transcript">
+    <svg><use href="#i-down"/></svg><span>Latest</span>
+  </button>
 
   <footer class="footer">
     <div class="saving-to">

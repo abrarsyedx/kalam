@@ -83,7 +83,7 @@ pub struct SourceBuffer {
 }
 
 impl SourceBuffer {
-    fn push(&self, samples: &[f32]) {
+    pub(crate) fn push(&self, samples: &[f32]) {
         let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
         let prev = f32::from_bits(self.peak.load(Ordering::Relaxed));
         self.peak.store(prev.max(peak).to_bits(), Ordering::Relaxed);

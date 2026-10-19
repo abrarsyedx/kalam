@@ -209,6 +209,7 @@ pub fn run() {
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,
+            commands::set_source_muted,
             commands::stop_recording,
             commands::cancel_polish,
             commands::recheck_gpu,

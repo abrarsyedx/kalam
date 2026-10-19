@@ -41,6 +41,9 @@ pub struct Levels {
 pub struct MixerControl {
     pub paused: Arc<AtomicBool>,
     pub stop: Arc<AtomicBool>,
+    /// Muted sources ([microphone, computer audio]) are left out of the
+    /// recording and the transcript; the recording itself carries on.
+    pub muted: [Arc<AtomicBool>; 2],
 }
 
 pub fn spawn_mixer(
@@ -121,15 +124,20 @@ pub fn spawn_mixer(
                         if got < need && !stopping {
                             primed[i] = false; // underrun: re-buffer before continuing
                         }
+                        if !stopping && src.len() > MAX_BACKLOG {
+                            src.trim_to(CUSHION);
+                        }
+                        // Muted: the audio is still taken, so the source stays in
+                        // step for when it is unmuted, but it is not mixed in.
+                        if ctl.muted[i].load(Ordering::Relaxed) {
+                            continue;
+                        }
                         let mut energy = 0f32;
                         for (m, s) in mix.iter_mut().zip(&tmp) {
                             *m += *s;
                             energy += s * s;
                         }
                         rms[i] = (energy / need as f32).sqrt();
-                        if !stopping && src.len() > MAX_BACKLOG {
-                            src.trim_to(CUSHION);
-                        }
                     }
                     mix.iter_mut().for_each(|m| *m = m.clamp(-1.0, 1.0));
 
@@ -153,9 +161,13 @@ pub fn spawn_mixer(
 
                 if last_ui.elapsed() >= UI_INTERVAL {
                     last_ui = Instant::now();
+                    let peak = |i: usize, src: &Option<Arc<SourceBuffer>>| {
+                        let p = src.as_ref().map_or(0.0, |s| s.take_peak());
+                        if ctl.muted[i].load(Ordering::Relaxed) { 0.0 } else { p }
+                    };
                     on_levels(Levels {
-                        mic: mic.as_ref().map_or(0.0, |s| s.take_peak()),
-                        system: system.as_ref().map_or(0.0, |s| s.take_peak()),
+                        mic: peak(0, &mic),
+                        system: peak(1, &system),
                         seconds: recorded as f64 / MIX_RATE as f64,
                     });
                 }
@@ -184,6 +196,93 @@ mod tests {
     use crate::transcribe::{spawn_worker, AsrEvent, WorkerConfig};
     use std::sync::mpsc;
     use std::sync::Mutex;
+
+    /// Muting the microphone mid-recording leaves it out of the mix (MP3 and
+    /// transcriber) while computer audio keeps recording, and unmuting brings
+    /// it back.
+    #[test]
+    fn muted_source_is_left_out() {
+        let mic = Arc::new(SourceBuffer::default());
+        let sys = Arc::new(SourceBuffer::default());
+        let done = Arc::new(AtomicBool::new(false));
+        // Live-like delivery: 20 ms blocks of a steady 0.5 (mic) and 0.25 (system).
+        let feeder = {
+            let (mic, sys, done) = (mic.clone(), sys.clone(), done.clone());
+            std::thread::spawn(move || {
+                while !done.load(Ordering::SeqCst) {
+                    mic.push(&[0.5; 960]);
+                    sys.push(&[0.25; 960]);
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            })
+        };
+        let mp3_path = std::env::temp_dir().join(format!("kalam-mute-test-{}.mp3", std::process::id()));
+        let mp3 = Mp3Writer::create(&mp3_path, MIX_RATE, 128).unwrap();
+        let (asr_tx, asr_rx) = mpsc::channel::<AsrMsg>();
+        let muted = [Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false))];
+        let stop = Arc::new(AtomicBool::new(false));
+        let mixer = spawn_mixer(
+            Some(mic.clone()),
+            Some(sys.clone()),
+            mp3,
+            asr_tx,
+            MixerControl { paused: Arc::new(AtomicBool::new(false)), stop: stop.clone(), muted: muted.clone() },
+            |_| {},
+        );
+        // (mic level, system level, middle sample) of each block sent to the transcriber.
+        let blocks = |rx: &mpsc::Receiver<AsrMsg>| -> Vec<(f32, f32, f32)> {
+            rx.try_iter()
+                .filter_map(|m| match m {
+                    AsrMsg::Audio { samples, mic_rms, system_rms } if samples.len() > 20 => {
+                        Some((mic_rms, system_rms, samples[samples.len() / 2]))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let settle = || std::thread::sleep(Duration::from_millis(250));
+        let measure = || std::thread::sleep(Duration::from_millis(400));
+
+        settle();
+        blocks(&asr_rx);
+        measure();
+        let both = blocks(&asr_rx);
+
+        muted[0].store(true, Ordering::SeqCst);
+        settle();
+        blocks(&asr_rx);
+        measure();
+        let mic_muted = blocks(&asr_rx);
+
+        muted[0].store(false, Ordering::SeqCst);
+        settle();
+        blocks(&asr_rx);
+        measure();
+        let unmuted = blocks(&asr_rx);
+
+        stop.store(true, Ordering::SeqCst);
+        done.store(true, Ordering::SeqCst);
+        mixer.join().unwrap().unwrap();
+        feeder.join().unwrap();
+        let _ = std::fs::remove_file(&mp3_path);
+
+        let mixed = |v: &[(f32, f32, f32)], mic_on: bool| {
+            assert!(!v.is_empty(), "audio keeps flowing");
+            let full = v.iter().filter(|b| b.1 > 0.0).count();
+            assert!(full * 2 >= v.len(), "system audio recorded throughout: {v:?}");
+            for &(mic_rms, _, sample) in v.iter().filter(|b| b.1 > 0.0) {
+                if mic_on {
+                    assert!(mic_rms > 0.0, "mic recorded: {v:?}");
+                } else {
+                    assert_eq!(mic_rms, 0.0, "muted mic left out: {v:?}");
+                    assert!((sample - 0.25).abs() < 0.05, "only system audio in the mix: {v:?}");
+                }
+            }
+        };
+        mixed(&both, true);
+        mixed(&mic_muted, false);
+        mixed(&unmuted, true);
+    }
 
     /// Plays a speech WAV through the default speakers while recording the
     /// computer's audio (loopback) + microphone, exactly like a session does,
@@ -258,7 +357,7 @@ mod tests {
                 Some(sys),
                 mp3,
                 asr_tx,
-                MixerControl { paused: paused.clone(), stop: stop.clone() },
+                MixerControl { paused: paused.clone(), stop: stop.clone(), muted: Default::default() },
                 move |l| {
                     let mut p = peak_sys.lock().unwrap();
                     *p = p.max(l.system);

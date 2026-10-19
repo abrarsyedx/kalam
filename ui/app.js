@@ -9,7 +9,7 @@ const el = {
   record: $("btn-record"), pause: $("btn-pause"), stop: $("btn-stop"),
   stateLabel: $("state-label"), timer: $("timer"),
   micMeter: $("meter-mic"), sysMeter: $("meter-sys"),
-  paper: $("paper"), empty: $("empty"), lines: $("lines"), preview: $("preview"),
+  paper: $("paper"), empty: $("empty"), lines: $("lines"), preview: $("preview"), jump: $("btn-jump"),
   folder: $("btn-folder"), saved: $("saved"), openDocx: $("btn-open-docx"), openMp3: $("btn-open-mp3"),
   modelChip: $("model-chip"), modelSelect: $("model-select"), modelState: $("model-state"),
   gpuBadge: $("gpu-badge"), polish: $("polish"), polishText: $("polish-text"),
@@ -17,6 +17,10 @@ const el = {
 };
 
 let mode = "idle"; // idle | starting | recording | paused | stopping
+/** Sources muted during the current recording (left out of the MP3 and transcript). */
+const muted = { mic: false, system: false };
+/** Device names of the current recording's sources, for the meter tooltips. */
+const sourceDevices = { mic: null, system: null };
 let settings = null;
 let status = null;
 let lastSaved = null;
@@ -59,6 +63,7 @@ function setMode(next) {
     idle: "Ready", starting: "Starting…", recording: "Recording", paused: "Paused", stopping: "Saving…",
   }[next];
   if (!active) setLevels({ mic: 0, system: 0 });
+  renderMute();
 }
 
 function setLevels({ mic, system }) {
@@ -80,8 +85,43 @@ function updateSources(info) {
   const sysOn = info ? !!info.systemDevice : settings?.captureSystem;
   el.micMeter.classList.toggle("off", !micOn);
   el.sysMeter.classList.toggle("off", !sysOn);
-  el.micMeter.title = info?.micDevice ? `Microphone: ${info.micDevice}` : "Microphone";
-  el.sysMeter.title = info?.systemDevice ? `Computer audio: ${info.systemDevice}` : "Computer audio (Teams, Zoom, Meet…)";
+  sourceDevices.mic = info?.micDevice || null;
+  sourceDevices.system = info?.systemDevice || null;
+  renderMute();
+}
+
+/** The meter icons double as mute buttons while recording. */
+function renderMute() {
+  const active = mode === "recording" || mode === "paused";
+  for (const [source, meter] of [["mic", el.micMeter], ["system", el.sysMeter]]) {
+    const canMute = active && !meter.classList.contains("off");
+    const isMuted = canMute && muted[source];
+    meter.disabled = !canMute;
+    meter.classList.toggle("muted", isMuted);
+    meter.setAttribute("aria-pressed", String(isMuted));
+    const icon = source === "mic" ? "mic" : "speaker";
+    meter.querySelector("use").setAttribute("href", `#i-${icon}${isMuted ? "-off" : ""}`);
+    const name = source === "mic" ? "Microphone" : "Computer audio";
+    const device = sourceDevices[source] ? `: ${sourceDevices[source]}` : source === "system" ? " (Teams, Zoom, Meet…)" : "";
+    const hint = !canMute ? ""
+      : isMuted ? "\nMuted: not recorded or transcribed. Click to unmute."
+      : "\nClick to mute (stop recording and transcribing it).";
+    meter.title = name + device + hint;
+  }
+}
+
+async function toggleMute(source) {
+  if (mode !== "recording" && mode !== "paused") return;
+  const next = !muted[source];
+  try {
+    await invoke("set_source_muted", { source, muted: next });
+    muted[source] = next;
+    renderMute();
+    const name = source === "mic" ? "Microphone" : "Computer audio";
+    toast(next ? `${name} muted: it is left out of the recording and the transcript.` : `${name} unmuted.`);
+  } catch (e) {
+    toast(String(e), "error");
+  }
 }
 
 function nearBottom() {
@@ -89,8 +129,22 @@ function nearBottom() {
   return p.scrollHeight - p.scrollTop - p.clientHeight < 120;
 }
 
+// While Kalam scrolls to new text (smoothly), the page is briefly not at the
+// bottom; don't flash the "Latest" button for that.
+let autoScrollUntil = 0;
+
 function scrollToEnd(force) {
-  if (force) el.paper.scrollTop = el.paper.scrollHeight;
+  if (force) {
+    autoScrollUntil = performance.now() + 700;
+    el.paper.scrollTop = el.paper.scrollHeight;
+  }
+  updateJump();
+}
+
+/** Show "Latest" when the reader has scrolled up, away from the newest text. */
+function updateJump() {
+  const writing = el.paper.classList.contains("writing");
+  el.jump.hidden = !writing || performance.now() < autoScrollUntil || nearBottom();
 }
 
 function showWriting() {
@@ -142,6 +196,7 @@ function clearTranscript() {
   el.preview.hidden = true;
   el.empty.hidden = false;
   el.paper.classList.remove("writing");
+  updateJump();
 }
 
 const fileName = (p) => (p || "").split(/[\\/]/).pop();
@@ -259,6 +314,7 @@ async function start() {
     setPolish(null);
     if (polishing) toast("Polishing of the previous transcript was stopped; its live version is saved.");
     el.timer.textContent = clock(0);
+    muted.mic = muted.system = false;
     updateSources(info);
     setMode("recording");
     if (info.warnings?.length) toast(info.warnings.join("\n"), "error", 9000);
@@ -314,6 +370,10 @@ async function openPath(path) {
 }
 
 el.record.addEventListener("click", start);
+el.micMeter.addEventListener("click", () => toggleMute("mic"));
+el.sysMeter.addEventListener("click", () => toggleMute("system"));
+el.paper.addEventListener("scroll", updateJump, { passive: true });
+el.jump.addEventListener("click", () => scrollToEnd(true));
 el.pause.addEventListener("click", togglePause);
 el.stop.addEventListener("click", stop);
 el.openDocx.addEventListener("click", () => lastSaved && openPath(lastSaved.docxPath));
@@ -564,6 +624,8 @@ async function boot() {
   renderModelSelect();
   showFolder();
   if (status.recording) {
+    muted.mic = !!status.micMuted;
+    muted.system = !!status.systemMuted;
     updateSources(status.session);
     setMode(status.paused ? "paused" : "recording");
   } else {

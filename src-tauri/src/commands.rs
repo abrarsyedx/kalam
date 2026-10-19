@@ -8,7 +8,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::audio::capture::{list_devices as enumerate_devices, DeviceList};
-use crate::session::{SavedFiles, Session, SessionInfo};
+use crate::session::{SavedFiles, Session, SessionInfo, Source};
 use crate::gpu::GpuStatus;
 use crate::settings::{Settings, MODEL_ACCURATE, MODEL_CUSTOM, MODEL_FAST};
 use crate::transcribe::ModelStatus;
@@ -25,6 +25,8 @@ fn err(e: impl std::fmt::Display) -> String {
 pub struct Status {
     recording: bool,
     paused: bool,
+    mic_muted: bool,
+    system_muted: bool,
     session: Option<SessionInfo>,
     model: ModelStatus,
     default_output_dir: String,
@@ -52,6 +54,8 @@ pub fn get_status(app: AppHandle, state: State<'_, AppState>) -> Status {
     Status {
         recording: session.is_some(),
         paused: session.as_ref().is_some_and(|s| s.is_paused()),
+        mic_muted: session.as_ref().is_some_and(|s| s.is_muted(Source::Mic)),
+        system_muted: session.as_ref().is_some_and(|s| s.is_muted(Source::System)),
         session: session.as_ref().map(|s| s.info.clone()),
         model: state.models.status(),
         default_output_dir: state.default_output.to_string_lossy().into_owned(),
@@ -161,6 +165,15 @@ pub async fn start_recording(app: AppHandle) -> CmdResult<SessionInfo> {
 pub fn pause_recording(state: State<'_, AppState>) -> CmdResult<()> {
     match state.session.lock().unwrap().as_ref() {
         Some(s) => Ok(s.set_paused(true)),
+        None => Err("Not recording".into()),
+    }
+}
+
+/// Mute or unmute the microphone or the computer audio during a recording.
+#[tauri::command]
+pub fn set_source_muted(state: State<'_, AppState>, source: Source, muted: bool) -> CmdResult<()> {
+    match state.session.lock().unwrap().as_ref() {
+        Some(s) => Ok(s.set_muted(source, muted)),
         None => Err("Not recording".into()),
     }
 }

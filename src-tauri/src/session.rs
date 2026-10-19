@@ -97,9 +97,19 @@ impl Transcript {
     }
 }
 
+/// An audio source that can be muted during a recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Source {
+    Mic,
+    System,
+}
+
 pub struct Session {
     pub info: SessionInfo,
     paused: Arc<AtomicBool>,
+    /// [microphone, computer audio]; see `MixerControl::muted`.
+    muted: [Arc<AtomicBool>; 2],
     stop: Arc<AtomicBool>,
     recorded_ms: Arc<AtomicU64>,
     capture_stop: Sender<()>,
@@ -284,6 +294,7 @@ impl Session {
         // 4. Mixer: drives the MP3 encoder and feeds the worker.
         let paused = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
+        let muted: [Arc<AtomicBool>; 2] = Default::default();
         let mixer = {
             let app = app.clone();
             let recorded_ms = Arc::clone(&recorded_ms);
@@ -292,7 +303,7 @@ impl Session {
                 sys_buf,
                 mp3,
                 asr_tx,
-                MixerControl { paused: Arc::clone(&paused), stop: Arc::clone(&stop) },
+                MixerControl { paused: Arc::clone(&paused), stop: Arc::clone(&stop), muted: muted.clone() },
                 move |levels| {
                     recorded_ms.store((levels.seconds * 1000.0) as u64, Ordering::Relaxed);
                     let _ = app.emit(EV_LEVELS, levels);
@@ -308,7 +319,7 @@ impl Session {
             warnings: report.warnings,
         };
         log::info!("Recording started: {}", info.mp3_path);
-        Ok(Self { info, paused, stop, recorded_ms, capture_stop, capture, mixer, asr, transcript, live_done, cancel_polish })
+        Ok(Self { info, paused, muted, stop, recorded_ms, capture_stop, capture, mixer, asr, transcript, live_done, cancel_polish })
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -317,6 +328,16 @@ impl Session {
 
     pub fn is_paused(&self) -> bool {
         self.paused.load(Ordering::SeqCst)
+    }
+
+    /// Leave a source out of the recording and transcript (or bring it back).
+    pub fn set_muted(&self, source: Source, muted: bool) {
+        self.muted[source as usize].store(muted, Ordering::SeqCst);
+        log::info!("{source:?} {}", if muted { "muted" } else { "unmuted" });
+    }
+
+    pub fn is_muted(&self, source: Source) -> bool {
+        self.muted[source as usize].load(Ordering::SeqCst)
     }
 
     /// Stop capture, finish the MP3, transcribe what is still buffered and
