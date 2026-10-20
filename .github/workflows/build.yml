@@ -3,7 +3,7 @@
 # platform, so each gets its own status badge in the README).
 #  - Every push / pull request: the installers are attached to the workflow run
 #    as downloadable artifacts (Actions tab -> the run -> "Artifacts").
-#  - Pushing a tag like v1.4.0: a draft GitHub Release is created with all
+#  - Pushing a tag like v1.4.1: a draft GitHub Release is created with all
 #    installers attached; review it and press "Publish".
 name: Build installers
 

@@ -17,8 +17,6 @@ const el = {
 };
 
 let mode = "idle"; // idle | starting | recording | paused | stopping
-/** Sources muted during the current recording (left out of the MP3 and transcript). */
-const muted = { mic: false, system: false };
 /** Device names of the current recording's sources, for the meter tooltips. */
 const sourceDevices = { mic: null, system: null };
 let settings = null;
@@ -90,35 +88,40 @@ function updateSources(info) {
   renderMute();
 }
 
-/** The meter icons double as mute buttons while recording. */
+/** Muted sources are left out of recordings (saved in the settings, so it lasts). */
+const isMuted = (source) => !!settings?.[source === "mic" ? "micMuted" : "systemMuted"];
+const sourceName = (source) => (source === "mic" ? "Microphone" : "Computer audio");
+
+/** The meter icons double as mute buttons, at any time. */
 function renderMute() {
-  const active = mode === "recording" || mode === "paused";
+  const recording = mode === "recording" || mode === "paused";
   for (const [source, meter] of [["mic", el.micMeter], ["system", el.sysMeter]]) {
-    const canMute = active && !meter.classList.contains("off");
-    const isMuted = canMute && muted[source];
+    // A source that is switched off in Settings is not recorded at all.
+    const canMute = !meter.classList.contains("off");
+    const muted = canMute && isMuted(source);
     meter.disabled = !canMute;
-    meter.classList.toggle("muted", isMuted);
-    meter.setAttribute("aria-pressed", String(isMuted));
+    meter.classList.toggle("muted", muted);
+    meter.setAttribute("aria-pressed", String(muted));
     const icon = source === "mic" ? "mic" : "speaker";
-    meter.querySelector("use").setAttribute("href", `#i-${icon}${isMuted ? "-off" : ""}`);
-    const name = source === "mic" ? "Microphone" : "Computer audio";
+    meter.querySelector("use").setAttribute("href", `#i-${icon}${muted ? "-off" : ""}`);
     const device = sourceDevices[source] ? `: ${sourceDevices[source]}` : source === "system" ? " (Teams, Zoom, Meet…)" : "";
-    const hint = !canMute ? ""
-      : isMuted ? "\nMuted: not recorded or transcribed. Click to unmute."
-      : "\nClick to mute (stop recording and transcribing it).";
-    meter.title = name + device + hint;
+    const hint = !canMute ? "\nTurned off in Settings."
+      : muted ? `\nMuted: not ${recording ? "being " : ""}recorded or transcribed. Click to unmute.`
+      : "\nClick to mute (leave it out of recordings and transcripts).";
+    meter.title = sourceName(source) + device + hint;
   }
 }
 
 async function toggleMute(source) {
-  if (mode !== "recording" && mode !== "paused") return;
-  const next = !muted[source];
+  const next = !isMuted(source);
   try {
-    await invoke("set_source_muted", { source, muted: next });
-    muted[source] = next;
+    settings = await invoke("set_source_muted", { source, muted: next });
     renderMute();
-    const name = source === "mic" ? "Microphone" : "Computer audio";
-    toast(next ? `${name} muted: it is left out of the recording and the transcript.` : `${name} unmuted.`);
+    const name = sourceName(source);
+    const recording = mode === "recording" || mode === "paused";
+    toast(next
+      ? `${name} muted: ${recording ? "it is left out of this recording and its transcript" : "it will be left out of recordings and transcripts"} until you unmute it.`
+      : `${name} unmuted.`);
   } catch (e) {
     toast(String(e), "error");
   }
@@ -314,10 +317,14 @@ async function start() {
     setPolish(null);
     if (polishing) toast("Polishing of the previous transcript was stopped; its live version is saved.");
     el.timer.textContent = clock(0);
-    muted.mic = muted.system = false;
     updateSources(info);
     setMode("recording");
+    const mutedNow = [["mic", info.micDevice], ["system", info.systemDevice]].filter(([src, dev]) => dev && isMuted(src));
     if (info.warnings?.length) toast(info.warnings.join("\n"), "error", 9000);
+    else if (mutedNow.length) {
+      const names = mutedNow.map(([src]) => sourceName(src)).join(" and ");
+      toast(`${names} ${mutedNow.length > 1 ? "are" : "is"} muted${mutedNow.length > 1 ? ": nothing is recorded" : ""}. Click ${mutedNow.length > 1 ? "an icon" : "its icon"} next to the meters to unmute.`, "info", 7000);
+    }
     if (status?.model?.state === "loading") toast("Recording. Transcription will begin as soon as the speech model has loaded.");
   } catch (e) {
     setMode("idle");
@@ -624,8 +631,6 @@ async function boot() {
   renderModelSelect();
   showFolder();
   if (status.recording) {
-    muted.mic = !!status.micMuted;
-    muted.system = !!status.systemMuted;
     updateSources(status.session);
     setMode(status.paused ? "paused" : "recording");
   } else {

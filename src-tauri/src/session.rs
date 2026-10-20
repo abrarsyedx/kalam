@@ -97,7 +97,7 @@ impl Transcript {
     }
 }
 
-/// An audio source that can be muted during a recording.
+/// An audio source that can be muted (see `Settings::mic_muted`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Source {
@@ -294,7 +294,8 @@ impl Session {
         // 4. Mixer: drives the MP3 encoder and feeds the worker.
         let paused = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
-        let muted: [Arc<AtomicBool>; 2] = Default::default();
+        // Sources muted before the recording start muted.
+        let muted = [Arc::new(AtomicBool::new(settings.mic_muted)), Arc::new(AtomicBool::new(settings.system_muted))];
         let mixer = {
             let app = app.clone();
             let recorded_ms = Arc::clone(&recorded_ms);
@@ -334,10 +335,6 @@ impl Session {
     pub fn set_muted(&self, source: Source, muted: bool) {
         self.muted[source as usize].store(muted, Ordering::SeqCst);
         log::info!("{source:?} {}", if muted { "muted" } else { "unmuted" });
-    }
-
-    pub fn is_muted(&self, source: Source) -> bool {
-        self.muted[source as usize].load(Ordering::SeqCst)
     }
 
     /// Stop capture, finish the MP3, transcribe what is still buffered and

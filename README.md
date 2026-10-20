@@ -21,7 +21,7 @@ Everything runs on your device. No account, no cloud, no internet connection.</p
 
 ## Features
 
-- **Record and transcribe with one click.** **Record / Pause / Stop** buttons, a running timer and live level meters for the microphone and the computer's audio. Click the microphone or speaker icon to **mute** that source mid-recording.
+- **Record and transcribe with one click.** **Record / Pause / Stop** buttons, a running timer and live level meters for the microphone and the computer's audio. Click the microphone or speaker icon to **mute** that source, before or during a recording; Kalam remembers it.
 - **Captures meeting audio without extra drivers.**
   - Windows 10/11: WASAPI loopback, so whatever the PC plays is recorded.
   - macOS 14.6+: a Core Audio process tap, so no BlackHole or Soundflower is needed.
@@ -90,8 +90,8 @@ Download the installer for your system from the project's **Releases** page, or 
 
 | File | When to use |
 |---|---|
-| `Kalam_1.4.0_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
-| `Kalam_1.4.0_x64_en-US.msi` | For IT departments / Group Policy deployment. |
+| `Kalam_1.4.1_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
+| `Kalam_1.4.1_x64_en-US.msi` | For IT departments / Group Policy deployment. |
 
 1. Run the installer. The app isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 2. Start **Kalam** from the Start menu.
@@ -102,7 +102,7 @@ Requirements: a 64-bit CPU with AVX2 (any Intel Core from 2013 / AMD Ryzen or ne
 
 ### macOS 14.2+ (Apple Silicon or Intel)
 
-1. Open `Kalam_1.4.0_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.0_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
+1. Open `Kalam_1.4.1_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.1_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
 2. The app isn't notarised by Apple. The first time, open it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run this in Terminal:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Kalam.app
@@ -117,7 +117,8 @@ System-audio capture needs **macOS 14.6 or newer**. On 14.2–14.5 Kalam records
 
 1. Click **Record**. Kalam starts capturing the microphone and the computer's audio and begins writing.
 2. **Pause** stops both recording and transcription. **Resume** continues in the same files.
-   - **Mute one source:** while recording, click the **microphone** or **speaker** icon next to its level meter. A muted source turns red and is left out of the MP3 and the transcript (it is silent there), while the other keeps recording. Click again to unmute.
+   - **Mute one source:** click the **microphone** or **speaker** icon next to its level meter, during a recording or before one. A muted source turns red and is left out of the MP3 and the transcript (it is silent there), while the other keeps recording. Click again to unmute.
+   - Kalam **remembers** what is muted: it stays muted for the next recordings and after restarting Kalam, until you unmute it. When a recording starts with a source muted, Kalam reminds you.
    - **Scrolled up to reread something?** The live text stops following, and a **Latest** button appears at the bottom left. Click it to jump back to the newest text.
 3. **Stop** finishes the MP3 and saves the `.docx` right away. If polishing is on, the footer then shows **Polishing transcript… %**. When it finishes, the polished text replaces the live text on screen and in the `.docx`. Click **Skip** to keep the live version; starting a new recording also skips it.
 4. **Switch speech models** with the menu at the top right. The dot is green when the model is ready. The **GPU**/**CPU** badge shows where speech recognition runs. The menu is disabled while recording.
@@ -237,7 +238,7 @@ The installers are copied to `dist\`. On Windows the build output goes to a shor
 npm run build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.0_<arch>.dmg`.
+Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.1_<arch>.dmg`.
 
 The first build compiles whisper.cpp (with its GPU shaders) and LAME from source, which takes 10–20 minutes; later builds take a minute or two.
 
@@ -306,7 +307,7 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
    ```bash
    git init
    git add .
-   git commit -m "Kalam 1.4.0"
+   git commit -m "Kalam 1.4.1"
    git branch -M main
    git remote add origin https://github.com/<your-account>/kalam.git
    git push -u origin main
@@ -314,8 +315,8 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
 2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
 3. To publish a release, push a version tag. A **draft release** with all installers attached is created; review it and click **Publish**:
    ```bash
-   git tag v1.4.0
-   git push origin v1.4.0
+   git tag v1.4.1
+   git push origin v1.4.1
    ```
 
 ---

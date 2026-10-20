@@ -25,8 +25,6 @@ fn err(e: impl std::fmt::Display) -> String {
 pub struct Status {
     recording: bool,
     paused: bool,
-    mic_muted: bool,
-    system_muted: bool,
     session: Option<SessionInfo>,
     model: ModelStatus,
     default_output_dir: String,
@@ -54,8 +52,6 @@ pub fn get_status(app: AppHandle, state: State<'_, AppState>) -> Status {
     Status {
         recording: session.is_some(),
         paused: session.as_ref().is_some_and(|s| s.is_paused()),
-        mic_muted: session.as_ref().is_some_and(|s| s.is_muted(Source::Mic)),
-        system_muted: session.as_ref().is_some_and(|s| s.is_muted(Source::System)),
         session: session.as_ref().map(|s| s.info.clone()),
         model: state.models.status(),
         default_output_dir: state.default_output.to_string_lossy().into_owned(),
@@ -102,6 +98,9 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, mut settings: S
     let (model_changed, gpu_changed) = {
         let mut current = state.settings.lock().unwrap();
         let changed = (state.model_paths(&current) != state.model_paths(&settings), current.gpu != settings.gpu);
+        // Muting is set from the main window (set_source_muted), not the dialog.
+        settings.mic_muted = current.mic_muted;
+        settings.system_muted = current.system_muted;
         settings.save(&state.settings_path).map_err(err)?;
         *current = settings.clone();
         changed
@@ -169,13 +168,26 @@ pub fn pause_recording(state: State<'_, AppState>) -> CmdResult<()> {
     }
 }
 
-/// Mute or unmute the microphone or the computer audio during a recording.
+/// Mute or unmute the microphone or the computer audio. Saved in the settings,
+/// so it also applies to later recordings and after a restart; a recording in
+/// progress follows immediately. Returns the updated settings.
 #[tauri::command]
-pub fn set_source_muted(state: State<'_, AppState>, source: Source, muted: bool) -> CmdResult<()> {
-    match state.session.lock().unwrap().as_ref() {
-        Some(s) => Ok(s.set_muted(source, muted)),
-        None => Err("Not recording".into()),
+pub fn set_source_muted(state: State<'_, AppState>, source: Source, muted: bool) -> CmdResult<Settings> {
+    let settings = {
+        let mut current = state.settings.lock().unwrap();
+        let mut next = current.clone();
+        match source {
+            Source::Mic => next.mic_muted = muted,
+            Source::System => next.system_muted = muted,
+        }
+        next.save(&state.settings_path).map_err(err)?;
+        *current = next.clone();
+        next
+    };
+    if let Some(s) = state.session.lock().unwrap().as_ref() {
+        s.set_muted(source, muted);
     }
+    Ok(settings)
 }
 
 #[tauri::command]

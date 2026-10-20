@@ -37,6 +37,10 @@ pub struct Settings {
     pub polish: String,
     /// Names, companies and terms, separated by commas or new lines.
     pub vocabulary: String,
+    /// Muted sources stay connected but are left out of recordings (silent in
+    /// the MP3, not transcribed) until unmuted. Kept across recordings and restarts.
+    pub mic_muted: bool,
+    pub system_muted: bool,
 }
 
 impl Default for Settings {
@@ -58,6 +62,8 @@ impl Default for Settings {
             gpu: GPU_AUTO.into(),
             polish: POLISH_AUTO.into(),
             vocabulary: String::new(),
+            mic_muted: false,
+            system_muted: false,
         }
     }
 }
@@ -175,6 +181,16 @@ mod tests {
         assert_eq!(load_json(r#"{"speakerLabels":false}"#).speakers, SPEAKERS_OFF);
         assert_eq!(load_json(r#"{"speakers":"source","speakerLabels":false}"#).speakers, SPEAKERS_SOURCE);
         assert_eq!(load_json("{}").speakers, SPEAKERS_VOICE);
+    }
+
+    #[test]
+    fn mute_state_is_kept() {
+        // Settings from before 1.4 have no mute keys: nothing is muted.
+        let old = load_json(r#"{"model":"fast"}"#);
+        assert!(!old.mic_muted && !old.system_muted);
+        let muted = Settings { mic_muted: true, ..Settings::default() };
+        let reloaded = load_json(&serde_json::to_string(&muted).unwrap());
+        assert!(reloaded.mic_muted && !reloaded.system_muted);
     }
 
     #[test]
