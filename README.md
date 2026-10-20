@@ -313,7 +313,7 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
    git push -u origin main
    ```
 2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
-3. To publish a release, push a version tag. A **draft release** with all installers attached is created; review it and click **Publish**:
+3. To publish a release, push a version tag. The *Release* workflow (`release.yml`) creates a **draft release**, builds all three platforms and attaches their installers (`.exe`, `.msi`, `.dmg`); review it and click **Publish**:
    ```bash
    git tag v1.4.1
    git push origin v1.4.1

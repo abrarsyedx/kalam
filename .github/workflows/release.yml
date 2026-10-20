@@ -1,0 +1,61 @@
+# Pushing a version tag (e.g. `git push origin v1.4.1`) creates a draft GitHub
+# Release, builds the installers for every platform and attaches them to it.
+# Review the draft on the Releases page and press "Publish".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # One draft for all platforms (created once, so parallel builds can't race to
+  # create duplicates). Reused if it already exists, e.g. when re-running.
+  draft:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "Kalam $TAG" \
+              --notes "Offline meeting recorder & live transcriber. See the README for installation notes."
+          fi
+
+  windows:
+    needs: draft
+    uses: ./.github/workflows/build.yml
+    with:
+      name: windows-x64
+      runner: windows-latest
+      target: x86_64-pc-windows-msvc
+      bundles: nsis,msi
+      target_dir: C:\t
+      release_tag: ${{ github.ref_name }}
+
+  macos-apple-silicon:
+    needs: draft
+    uses: ./.github/workflows/build.yml
+    with:
+      name: macos-apple-silicon
+      runner: macos-latest
+      target: aarch64-apple-darwin
+      bundles: app,dmg
+      release_tag: ${{ github.ref_name }}
+
+  macos-intel:
+    needs: draft
+    uses: ./.github/workflows/build.yml
+    with:
+      name: macos-intel
+      runner: macos-latest
+      target: x86_64-apple-darwin
+      bundles: app,dmg
+      release_tag: ${{ github.ref_name }}

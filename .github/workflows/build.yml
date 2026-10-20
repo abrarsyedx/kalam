@@ -1,10 +1,10 @@
-# Shared build steps for one platform. Not run on its own: the workflows
-# windows.yml, macos-apple-silicon.yml and macos-intel.yml call it (one per
-# platform, so each gets its own status badge in the README).
-#  - Every push / pull request: the installers are attached to the workflow run
-#    as downloadable artifacts (Actions tab -> the run -> "Artifacts").
-#  - Pushing a tag like v1.4.1: a draft GitHub Release is created with all
-#    installers attached; review it and press "Publish".
+# Shared build steps for one platform. Not run on its own:
+#  - windows.yml, macos-apple-silicon.yml and macos-intel.yml call it for every
+#    push / pull request (one per platform, so each gets its own status badge in
+#    the README). The installers are attached to the workflow run as
+#    downloadable artifacts (Actions tab -> the run -> "Artifacts").
+#  - release.yml calls it for a version tag like v1.4.1, with `release_tag`
+#    set: the installers are also attached to that draft GitHub Release.
 name: Build installers
 
 on:
@@ -25,6 +25,10 @@ on:
       # Windows: whisper.cpp's Vulkan build nests folders deeply; keep the build
       # folder path short (Windows 260-character limit).
       target_dir:
+        type: string
+        default: ""
+      # Version tag whose (draft) release gets the installers; empty = none.
+      release_tag:
         type: string
         default: ""
 
@@ -83,16 +87,8 @@ jobs:
       - run: npm ci
 
       - name: Build installers
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --target ${{ inputs.target }} --bundles ${{ inputs.bundles }}
-          # Only create a (draft) release when a version tag was pushed.
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: Kalam ${{ github.ref_name }}
-          releaseBody: Offline meeting recorder & live transcriber. See README for installation notes.
-          releaseDraft: true
+        shell: bash
+        run: npm run tauri build -- --target ${{ inputs.target }} --bundles ${{ inputs.bundles }}
 
       - name: Collect installers
         shell: bash
@@ -102,6 +98,25 @@ jobs:
           mkdir -p out
           find "$dir/${{ inputs.target }}/release/bundle" \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} out/ \;
           ls -l out
+
+      # Only the installers: no updater archive of the macOS app (Kalam has no
+      # auto-updater), which would double the upload. Uploads of ~750 MB files
+      # sometimes drop, so retry.
+      - name: Attach installers to the draft release
+        if: inputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"; then
+              exit 0
+            fi
+            echo "Upload failed (attempt $attempt of 3); retrying in 30 s ..."
+            sleep 30
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
