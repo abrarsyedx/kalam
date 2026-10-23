@@ -1,6 +1,6 @@
 [package]
 name = "kalam"
-version = "1.4.1"
+version = "1.4.2"
 description = "Kalam - offline meeting recorder and live transcriber"
 authors = ["Kalam contributors"]
 license = "MIT"
@@ -13,6 +13,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Compiles native/guard.cpp (catches C++ exceptions from the GPU backend).
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = [] }

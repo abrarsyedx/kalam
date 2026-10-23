@@ -27,6 +27,7 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState};
 
+use crate::native;
 use crate::speakers::{self, LiveSpeakers, Voiceprints};
 
 pub const ASR_RATE: u32 = 16_000;
@@ -62,6 +63,34 @@ static GPU_LOCK: Mutex<()> = Mutex::new(());
 
 fn gpu_lock() -> std::sync::MutexGuard<'static, ()> {
     GPU_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The GPU backend threw (see `native::guard`): the graphics driver failed,
+/// for example because it ran out of memory. Not used again this session.
+#[derive(Debug)]
+pub struct GpuFault(pub String);
+
+impl std::fmt::Display for GpuFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "graphics card error: {}", self.0)
+    }
+}
+
+impl std::error::Error for GpuFault {}
+
+/// Tests: KALAM_TEST_GPU_FAULT=1 makes the first GPU transcription throw.
+#[cfg(test)]
+fn simulate_gpu_fault() -> bool {
+    static FIRED: AtomicBool = AtomicBool::new(false);
+    std::env::var("KALAM_TEST_GPU_FAULT").is_ok_and(|v| v == "1") && !FIRED.swap(true, Ordering::SeqCst)
+}
+
+/// What the user is told when Kalam switches to the processor mid-session.
+fn gpu_fallback_message(fault: &GpuFault) -> String {
+    format!(
+        "The graphics card stopped working ({}). Kalam switched to the processor; the recording continues.",
+        fault.0
+    )
 }
 
 pub struct Model {
@@ -100,6 +129,8 @@ pub struct ModelManager {
     ready: Condvar,
     notify: Box<dyn Fn(ModelStatus) + Send + Sync>,
     gpu: Mutex<GpuUse>,
+    /// Called with the reason when the GPU fails and Kalam switches to the CPU.
+    on_gpu_fault: Mutex<Option<Box<dyn Fn(&str) + Send + Sync>>>,
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -117,7 +148,30 @@ impl ModelManager {
             ready: Condvar::new(),
             notify: Box::new(notify),
             gpu: Mutex::default(),
+            on_gpu_fault: Mutex::new(None),
         })
+    }
+
+    /// Run `hook` (with the reason) whenever the GPU fails and models move to the CPU.
+    pub fn on_gpu_fault(&self, hook: impl Fn(&str) + Send + Sync + 'static) {
+        *self.on_gpu_fault.lock().unwrap() = Some(Box::new(hook));
+    }
+
+    /// The GPU failed: reload the active models on the CPU (in the background;
+    /// `wait` returns them once loaded) and report why.
+    pub fn fall_back_to_cpu(self: &Arc<Self>, reason: &str) {
+        log::warn!("GPU failed ({reason}); switching to the CPU");
+        let (primary, preview) = {
+            let a = self.active.lock().unwrap();
+            (a.primary.clone(), a.preview.clone())
+        };
+        self.set_gpu(false, None);
+        if let Some(hook) = self.on_gpu_fault.lock().unwrap().as_ref() {
+            hook(reason);
+        }
+        if let Some(primary) = primary {
+            self.select(primary, preview);
+        }
     }
 
     /// Whether models are (to be) loaded on the GPU.
@@ -179,7 +233,15 @@ impl ModelManager {
             .spawn(move || {
                 let name = model_name(&path);
                 let started = Instant::now();
-                let result = load_model(&path, &name, &gpu).map(Arc::new);
+                let result = match load_model(&path, &name, &gpu) {
+                    Ok(model) => Ok(Arc::new(model)),
+                    Err(LoadError::Gpu(fault)) => {
+                        // Reloads every active model on the CPU, this one included.
+                        me.fall_back_to_cpu(&fault.0);
+                        return;
+                    }
+                    Err(LoadError::Other(e)) => Err(e),
+                };
                 let status = match &result {
                     Ok(m) => ModelStatus::Ready {
                         name: m.name.clone(),
@@ -239,33 +301,67 @@ fn model_name(path: &Path) -> String {
     stem.strip_prefix("ggml-").unwrap_or(&stem).to_string()
 }
 
-fn load_model(path: &Path, name: &str, gpu: &GpuUse) -> Result<Model, String> {
+enum LoadError {
+    /// The GPU backend threw while loading or warming up: retry on the CPU.
+    Gpu(GpuFault),
+    Other(String),
+}
+
+fn load_model(path: &Path, name: &str, gpu: &GpuUse) -> Result<Model, LoadError> {
     let _gpu = gpu_lock();
-    let size = std::fs::metadata(path).map_err(|_| format!("Model file not found: {}", path.display()))?.len();
+    let size = std::fs::metadata(path)
+        .map_err(|_| LoadError::Other(format!("Model file not found: {}", path.display())))?
+        .len();
     let mut params = WhisperContextParameters::default();
     params.use_gpu(gpu.enabled);
     if let Some(marker) = gpu.marker.as_ref().filter(|_| gpu.enabled) {
         let _ = std::fs::write(marker, name);
     }
-    let ctx = WhisperContext::new_with_params(path, params)
-        .map_err(|e| format!("Could not load Whisper model {}: {e}", path.display()))?;
+    let remove_marker = || {
+        if let Some(marker) = &gpu.marker {
+            let _ = std::fs::remove_file(marker);
+        }
+    };
+    let loaded = if gpu.enabled {
+        native::guard(|| WhisperContext::new_with_params(path, params))
+    } else {
+        Ok(WhisperContext::new_with_params(path, params))
+    };
+    let ctx = match loaded {
+        Ok(Ok(ctx)) => ctx,
+        Ok(Err(e)) => {
+            remove_marker();
+            return Err(LoadError::Other(format!("Could not load Whisper model {}: {e}", path.display())));
+        }
+        Err(fault) => {
+            remove_marker();
+            return Err(LoadError::Gpu(GpuFault(fault)));
+        }
+    };
     if gpu.enabled {
         // Warm-up: compiles the GPU shaders now rather than on the first
         // sentence of a meeting, and proves the driver copes with this model.
-        let warmup = ctx.create_state().and_then(|mut state| {
-            let mut p = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-            p.set_print_progress(false);
-            p.set_print_realtime(false);
-            p.set_max_tokens(4);
-            state.full(p, &vec![0.0; ASR_RATE as usize * 2])
+        let warmup = native::guard(|| {
+            ctx.create_state().and_then(|mut state| {
+                let mut p = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+                p.set_print_progress(false);
+                p.set_print_realtime(false);
+                p.set_max_tokens(4);
+                state.full(p, &vec![0.0; ASR_RATE as usize * 2])
+            })
         });
-        if let Err(e) = warmup {
-            log::warn!("GPU warm-up of {name} failed: {e}");
+        match warmup {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => log::warn!("GPU warm-up of {name} failed: {e}"),
+            Err(fault) => {
+                remove_marker();
+                // The context may be in a bad state after the throw: never free it.
+                std::mem::forget(ctx);
+                return Err(LoadError::Gpu(GpuFault(fault)));
+            }
         }
     }
-    if let Some(marker) = &gpu.marker {
-        let _ = std::fs::remove_file(marker);
-    }
+    remove_marker();
     let english_only = name.contains(".en");
     let heavy = size > HEAVY_MODEL_BYTES;
     log::info!("Loaded Whisper model {name} (english_only={english_only}, heavy={heavy}, gpu={})", gpu.enabled);
@@ -387,17 +483,18 @@ pub fn spawn_worker(
     std::thread::Builder::new()
         .name("kalam-asr".into())
         .spawn(move || {
-            let engines = models.wait(Duration::from_secs(600)).and_then(|(primary, preview)| {
-                let main = Engine::new(primary, &cfg).map_err(|e| format!("{e:#}"))?;
-                // A light preview model is optional: without it the main model previews.
-                // An English-only preview model is no use for other languages.
-                let preview = preview
-                    .filter(|m| !m.english_only || cfg.language == "en")
-                    .and_then(|m| Engine::new(m, &cfg).ok());
-                Ok((main, preview))
-            });
+            let engines = match create_engines(&models, &cfg) {
+                Err(e) if e.is::<GpuFault>() => {
+                    let fault = e.downcast::<GpuFault>().expect("checked");
+                    emit(AsrEvent::Error(gpu_fallback_message(&fault)));
+                    models.fall_back_to_cpu(&fault.0);
+                    create_engines(&models, &cfg)
+                }
+                other => other,
+            }
+            .map_err(|e| format!("{e:#}"));
             match engines {
-                Ok((engine, preview)) => Worker::new(engine, preview, cfg).run(&rx, &mut emit),
+                Ok((engine, preview)) => Worker::new(engine, preview, models, cfg).run(&rx, &mut emit),
                 Err(e) => {
                     emit(AsrEvent::Error(format!("Transcription disabled: {e}")));
                     // Keep draining so the recorder never blocks.
@@ -413,7 +510,10 @@ struct Engine {
     /// Keeps the model alive for as long as its state is in use.
     _model: Arc<Model>,
     on_gpu: bool,
-    state: WhisperState,
+    /// Not freed if the GPU backend threw while using it (see `Drop`).
+    state: std::mem::ManuallyDrop<WhisperState>,
+    /// The GPU backend threw: this engine must not be used again.
+    faulted: bool,
     language: String,
     threads: i32,
     /// Also shorten the encoder context for final passes (not just previews).
@@ -439,11 +539,19 @@ struct RawSegment {
 
 impl Engine {
     fn new(model: Arc<Model>, cfg: &WorkerConfig) -> Result<Self> {
-        let state = model.ctx.create_state().map_err(|e| anyhow!("whisper state: {e}"))?;
+        let state = if model.on_gpu {
+            // Sets up GPU buffers: serialised like all other GPU work, and
+            // guarded so a driver failure becomes an error instead of a crash.
+            let _gpu = gpu_lock();
+            native::guard(|| model.ctx.create_state()).map_err(|e| anyhow::Error::new(GpuFault(e)))?
+        } else {
+            model.ctx.create_state()
+        };
+        let state = std::mem::ManuallyDrop::new(state.map_err(|e| anyhow!("whisper state: {e}"))?);
         let language = if model.english_only { "en".to_string() } else { cfg.language.clone() };
         let threads = if cfg.threads > 0 { cfg.threads as i32 } else { auto_threads(model.heavy) };
         log::info!("{}: {threads} threads", model.name);
-        Ok(Self { trim_ctx: model.heavy, on_gpu: model.on_gpu, _model: model, state, language, threads })
+        Ok(Self { trim_ctx: model.heavy, on_gpu: model.on_gpu, _model: model, state, faulted: false, language, threads })
     }
 
     fn transcribe(&mut self, audio: &[f32], prompt: &str, pass: Pass) -> Result<Vec<RawSegment>> {
@@ -492,8 +600,25 @@ impl Engine {
             audio
         };
 
-        {
-            let _gpu = self.on_gpu.then(gpu_lock);
+        if self.faulted {
+            return Err(anyhow::Error::new(GpuFault("the graphics card failed earlier".into())));
+        }
+        if self.on_gpu {
+            let _gpu = gpu_lock();
+            match native::guard(|| {
+                #[cfg(test)]
+                if simulate_gpu_fault() {
+                    native::throw_for_test("simulated driver failure (test)");
+                }
+                self.state.full(p, input)
+            }) {
+                Ok(result) => result.map_err(|e| anyhow!("whisper: {e}"))?,
+                Err(fault) => {
+                    self.faulted = true;
+                    return Err(anyhow::Error::new(GpuFault(fault)));
+                }
+            }
+        } else {
             self.state.full(p, input).map_err(|e| anyhow!("whisper: {e}"))?;
         }
         let audio_ms = audio.len() as u64 * 1000 / ASR_RATE as u64;
@@ -506,6 +631,33 @@ impl Engine {
         }
         Ok(out)
     }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        // After a throw inside whisper.cpp the state may be half-updated, and
+        // freeing it could crash; leaking it until Kalam closes is safer.
+        if !self.faulted {
+            unsafe { std::mem::ManuallyDrop::drop(&mut self.state) };
+        }
+    }
+}
+
+/// The main engine and, optionally, a lighter one for live previews.
+fn create_engines(models: &ModelManager, cfg: &WorkerConfig) -> Result<(Engine, Option<Engine>)> {
+    let (primary, preview) = models.wait(Duration::from_secs(600)).map_err(|e| anyhow!(e))?;
+    let main = Engine::new(primary, cfg)?;
+    // A light preview model is optional: without it the main model previews.
+    // An English-only preview model is no use for other languages.
+    let preview = match preview.filter(|m| !m.english_only || cfg.language == "en") {
+        Some(m) => match Engine::new(m, cfg) {
+            Ok(engine) => Some(engine),
+            Err(e) if e.is::<GpuFault>() => return Err(e),
+            Err(_) => None,
+        },
+        None => None,
+    };
+    Ok((main, preview))
 }
 
 #[derive(Clone, Copy)]
@@ -536,6 +688,10 @@ fn label_speaker(energy: &[EnergyBlock], start_ms: u64, end_ms: u64) -> Option<S
 
 struct Worker {
     engine: Engine,
+    /// For switching to the CPU if the GPU fails mid-session.
+    models: Arc<ModelManager>,
+    /// Transcription stopped (no usable engine); the recording continues.
+    disabled: bool,
     /// Lighter model for the live preview (used when `engine` is heavy).
     preview_engine: Option<Engine>,
     /// How long the last preview took; previews are spaced out accordingly.
@@ -568,7 +724,7 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(engine: Engine, preview_engine: Option<Engine>, cfg: WorkerConfig) -> Self {
+    fn new(engine: Engine, preview_engine: Option<Engine>, models: Arc<ModelManager>, cfg: WorkerConfig) -> Self {
         let voice = match &cfg.speakers {
             SpeakerMode::Voice(model) => {
                 let v = Voiceprints::load(model, 2);
@@ -582,6 +738,8 @@ impl Worker {
         let expected_speakers = cfg.expected_speakers;
         Self {
             engine,
+            models,
+            disabled: false,
             preview_engine,
             preview_cost: Duration::ZERO,
             cfg,
@@ -720,6 +878,9 @@ impl Worker {
     }
 
     fn preview(&mut self, emit: &mut dyn FnMut(AsrEvent)) {
+        if self.disabled {
+            return;
+        }
         self.last_preview = Instant::now();
         self.last_preview_len = self.buf.len();
         let audio = std::mem::take(&mut self.buf);
@@ -728,6 +889,13 @@ impl Worker {
         let result = engine.transcribe(&audio, &prompt, Pass::Preview);
         self.preview_cost = self.last_preview.elapsed();
         self.buf = audio;
+        if let Err(e) = &result {
+            if let Some(fault) = e.downcast_ref::<GpuFault>() {
+                let fault = GpuFault(fault.0.clone());
+                self.fall_back_to_cpu(&fault, emit);
+                return;
+            }
+        }
         if let Ok(segs) = result {
             let text = join_clean(segs.iter().filter(|s| s.no_speech < 0.8).map(|s| s.text.as_str()));
             if !text.is_empty() {
@@ -742,11 +910,11 @@ impl Worker {
         let cut = cut.min(self.buf.len());
         let has_speech = self.speech.iter().take(cut / FRAME + 1).filter(|s| **s).count() as u64 * FRAME_MS
             >= MIN_SPEECH_MS;
-        if cut > 0 && has_speech {
+        if cut > 0 && has_speech && !self.disabled {
             let audio: Vec<f32> = self.buf[..cut].to_vec();
             self.spans.push((self.buf_start, self.buf_start + cut as u64));
             let prompt = self.prompt(&self.context);
-            match self.engine.transcribe(&audio, &prompt, Pass::Final) {
+            match self.transcribe_main(&audio, &prompt, Pass::Final, emit) {
                 Ok(raw) => {
                     let mut segments: Vec<Segment> = Vec::new();
                     for r in raw {
@@ -872,6 +1040,42 @@ impl Worker {
         }
     }
 
+    /// Transcribe with the main engine. If the GPU fails, switch to the CPU
+    /// and try once more there, so no speech is lost.
+    fn transcribe_main(&mut self, audio: &[f32], prompt: &str, pass: Pass, emit: &mut dyn FnMut(AsrEvent)) -> Result<Vec<RawSegment>> {
+        match self.engine.transcribe(audio, prompt, pass) {
+            Err(e) if e.is::<GpuFault>() => {
+                let fault = e.downcast::<GpuFault>().expect("checked");
+                self.fall_back_to_cpu(&fault, emit);
+                if self.disabled {
+                    return Err(anyhow!("transcription stopped"));
+                }
+                self.engine.transcribe(audio, prompt, pass)
+            }
+            other => other,
+        }
+    }
+
+    /// The GPU failed: carry on with the models reloaded on the CPU. If that
+    /// is impossible too, stop transcribing; the recording itself continues.
+    fn fall_back_to_cpu(&mut self, fault: &GpuFault, emit: &mut dyn FnMut(AsrEvent)) {
+        emit(AsrEvent::Error(gpu_fallback_message(fault)));
+        self.models.fall_back_to_cpu(&fault.0);
+        match create_engines(&self.models, &self.cfg) {
+            Ok((engine, preview)) => {
+                self.engine = engine;
+                self.preview_engine = preview;
+            }
+            Err(e) => {
+                log::error!("Transcription stopped after a GPU failure: {e:#}");
+                emit(AsrEvent::Error(format!(
+                    "Live transcription stopped ({e:#}). The recording continues and is saved as usual."
+                )));
+                self.disabled = true;
+            }
+        }
+    }
+
     /// Whisper's initial prompt: the user's names & terms, then the most
     /// recent transcript text for continuity.
     fn prompt(&self, context: &str) -> String {
@@ -897,7 +1101,7 @@ impl Worker {
                 .map(|s| *s as f32 / 32768.0)
                 .collect();
             let prompt = self.prompt(&context);
-            let raw = match self.engine.transcribe(&audio, &prompt, Pass::Polish) {
+            let raw = match self.transcribe_main(&audio, &prompt, Pass::Polish, emit) {
                 Ok(raw) => raw,
                 Err(e) => return Err(format!("Polishing failed ({e:#}); the live transcript is saved.")),
             };

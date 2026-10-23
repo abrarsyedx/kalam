@@ -4,6 +4,7 @@ mod audio;
 mod commands;
 mod docx;
 pub mod gpu;
+mod native;
 mod session;
 mod settings;
 mod speakers;
@@ -137,11 +138,42 @@ pub fn decide_gpu(app: &AppHandle, recheck: bool) {
     load_model(app);
 }
 
+/// Send C/C++ error output (whisper.cpp, the GPU backend) and Rust panic
+/// messages to `native.log` in the log folder; the previous run's file is kept
+/// as `native.prev.log`, so a crash's last words survive the restart. A
+/// windowed app started from the Start menu has no console, so this output is
+/// otherwise lost.
+fn capture_native_output(log_dir: &std::path::Path) {
+    let _ = std::fs::create_dir_all(log_dir);
+    let current = log_dir.join("native.log");
+    let _ = std::fs::rename(&current, log_dir.join("native.prev.log"));
+    if !native::redirect_stderr(&current) {
+        log::warn!("Could not capture native error output");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Rust panics go to the log too (they are otherwise invisible in a windowed app).
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("Unexpected error: {info}");
+        default_hook(info);
+    }));
+
+    use tauri_plugin_log::{Target, TargetKind};
+    // Log to the file only in release builds: the app has no console then, and
+    // a stdout target that cannot be written made the file logging fail too.
+    let log_targets: Vec<Target> = if cfg!(debug_assertions) {
+        vec![Target::new(TargetKind::Stdout), Target::new(TargetKind::LogDir { file_name: None })]
+    } else {
+        vec![Target::new(TargetKind::LogDir { file_name: None })]
+    };
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
+                .clear_targets()
+                .targets(log_targets)
                 .level(log::LevelFilter::Info)
                 .max_file_size(2_000_000)
                 .build(),
@@ -149,6 +181,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            if !cfg!(debug_assertions) {
+                if let Ok(log_dir) = app.path().app_log_dir() {
+                    capture_native_output(&log_dir);
+                }
+            }
             let config_dir = app.path().app_config_dir()?;
             let default_output = app
                 .path()
@@ -163,6 +200,23 @@ pub fn run() {
             let handle = app.handle().clone();
             let models = ModelManager::new(move |status| {
                 let _ = handle.emit(EV_MODEL, status);
+            });
+            // The GPU failed during a session: show it, and test the graphics
+            // card again at the next start (it may be a passing problem, such
+            // as other apps using up the memory it shares).
+            let fault_handle = app.handle().clone();
+            let fault_config = config_dir.clone();
+            models.on_gpu_fault(move |reason| {
+                gpu::forget(&fault_config);
+                set_gpu_status(
+                    &fault_handle,
+                    GpuStatus::Cpu {
+                        reason: format!(
+                            "The graphics card stopped working ({reason}), so Kalam switched to the processor. \
+                             It tests the graphics card again the next time Kalam starts."
+                        ),
+                    },
+                );
             });
             let app_version = app.package_info().version.to_string();
             log::info!("Kalam {app_version} starting; settings at {}", settings_path.display());

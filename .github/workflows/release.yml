@@ -1,4 +1,4 @@
-# Pushing a version tag (e.g. `git push origin v1.4.1`) creates a draft GitHub
+# Pushing a version tag (e.g. `git push origin v1.4.2`) creates a draft GitHub
 # Release, builds the installers for every platform and attaches them to it.
 # Review the draft on the Releases page and press "Publish".
 name: Release

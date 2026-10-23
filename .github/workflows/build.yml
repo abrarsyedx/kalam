@@ -3,7 +3,7 @@
 #    push / pull request (one per platform, so each gets its own status badge in
 #    the README). The installers are attached to the workflow run as
 #    downloadable artifacts (Actions tab -> the run -> "Artifacts").
-#  - release.yml calls it for a version tag like v1.4.1, with `release_tag`
+#  - release.yml calls it for a version tag like v1.4.2, with `release_tag`
 #    set: the installers are also attached to that draft GitHub Release.
 name: Build installers
 

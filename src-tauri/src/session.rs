@@ -105,6 +105,11 @@ pub enum Source {
     System,
 }
 
+/// Below this much free memory (RAM plus page file), a recording starts with
+/// a warning: transcription, especially on a graphics chip that shares system
+/// memory, may fail.
+const LOW_MEMORY_MB: u64 = 2048;
+
 pub struct Session {
     pub info: SessionInfo,
     paused: Arc<AtomicBool>,
@@ -312,12 +317,21 @@ impl Session {
             )
         };
 
+        let mut warnings = report.warnings;
+        if let Some(mb) = crate::native::available_memory_mb().filter(|mb| *mb < LOW_MEMORY_MB) {
+            log::warn!("Low memory at the start of a recording: {mb} MB available");
+            warnings.push(format!(
+                "Windows is low on memory ({:.1} GB left). The recording is safe, but if transcription stops, \
+                 close apps you are not using.",
+                mb as f64 / 1024.0
+            ));
+        }
         let info = SessionInfo {
             mp3_path: mp3_path.to_string_lossy().into_owned(),
             docx_path: docx_path.to_string_lossy().into_owned(),
             mic_device: report.mic_device,
             system_device: report.system_device,
-            warnings: report.warnings,
+            warnings,
         };
         log::info!("Recording started: {}", info.mp3_path);
         Ok(Self { info, paused, muted, stop, recorded_ms, capture_stop, capture, mixer, asr, transcript, live_done, cancel_polish })

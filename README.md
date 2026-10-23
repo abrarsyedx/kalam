@@ -90,8 +90,8 @@ Download the installer for your system from the project's **Releases** page, or 
 
 | File | When to use |
 |---|---|
-| `Kalam_1.4.1_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
-| `Kalam_1.4.1_x64_en-US.msi` | For IT departments / Group Policy deployment. |
+| `Kalam_1.4.2_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
+| `Kalam_1.4.2_x64_en-US.msi` | For IT departments / Group Policy deployment. |
 
 1. Run the installer. The app isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 2. Start **Kalam** from the Start menu.
@@ -102,7 +102,7 @@ Requirements: a 64-bit CPU with AVX2 (any Intel Core from 2013 / AMD Ryzen or ne
 
 ### macOS 14.2+ (Apple Silicon or Intel)
 
-1. Open `Kalam_1.4.1_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.1_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
+1. Open `Kalam_1.4.2_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.2_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
 2. The app isn't notarised by Apple. The first time, open it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run this in Terminal:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Kalam.app
@@ -149,7 +149,8 @@ GPU drivers vary a lot between PCs, so Kalam never relies on one blindly:
 3. **In CPU mode, graphics drivers are kept out entirely.** Kalam tells its Vulkan loader not to load any driver, so a broken driver can't affect it.
 4. **Crash marker.** Each model is loaded and warmed up on the GPU behind a marker file. If Kalam ever dies at that moment, the next start uses the CPU and says so.
 5. **Graphics work runs one task at a time** to avoid driver race conditions.
-6. **You stay in control:** **Settings → Graphics card** shows the result, can switch the GPU **off**, and has **Test graphics card again** (e.g. after a driver update).
+6. **A graphics failure during a meeting does not stop Kalam.** If the driver fails mid-session (for example because other apps have used up the memory it shares with the system), Kalam catches the error, switches to the processor and carries on. The recording is never interrupted, and the affected speech is transcribed again on the processor, so none is lost. The graphics card is tested again at the next start.
+7. **You stay in control:** **Settings → Graphics card** shows the result, can switch the GPU **off**, and has **Test graphics card again** (e.g. after a driver update).
 
 ---
 
@@ -238,7 +239,7 @@ The installers are copied to `dist\`. On Windows the build output goes to a shor
 npm run build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.1_<arch>.dmg`.
+Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.2_<arch>.dmg`.
 
 The first build compiles whisper.cpp (with its GPU shaders) and LAME from source, which takes 10–20 minutes; later builds take a minute or two.
 
@@ -307,7 +308,7 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
    ```bash
    git init
    git add .
-   git commit -m "Kalam 1.4.1"
+   git commit -m "Kalam 1.4.2"
    git branch -M main
    git remote add origin https://github.com/<your-account>/kalam.git
    git push -u origin main
@@ -315,8 +316,8 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
 2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
 3. To publish a release, push a version tag. The *Release* workflow (`release.yml`) creates a **draft release**, builds all three platforms and attaches their installers (`.exe`, `.msi`, `.dmg`); review it and click **Publish**:
    ```bash
-   git tag v1.4.1
-   git push origin v1.4.1
+   git tag v1.4.2
+   git push origin v1.4.2
    ```
 
 ---
@@ -345,6 +346,8 @@ Settings are saved as JSON at:
 | MP3 quality | 128 kbps mono | 64–256 kbps; ~58 MB per hour at 128 kbps. |
 
 Logs (useful for bug reports): Windows `%LOCALAPPDATA%\io.github.kalam.desktop\logs`, macOS `~/Library/Logs/io.github.kalam.desktop`.
+- `Kalam.log`: what Kalam did (no transcript text).
+- `native.log`: messages from the speech engine and the graphics driver for the current run. `native.prev.log` keeps the previous run's, so after a crash, send that one.
 
 ### Other models
 
@@ -369,6 +372,9 @@ Vulkan already uses NVIDIA cards. For CUDA instead (Windows/Linux, needs the CUD
 | Problem | Fix |
 |---|---|
 | The badge says **CPU** although the PC has graphics | Update the graphics driver, then **Settings → Graphics card → Test graphics card again**. The status line explains why the GPU isn't used. |
+| "The graphics card stopped working … Kalam switched to the processor" | The graphics driver failed during the session, often because Windows was low on memory. Kalam carried on with the processor and nothing was lost. Close apps you are not using; Kalam tests the graphics card again at the next start. |
+| Kalam warns that "Windows is low on memory" when recording starts | Less than 2 GB of memory (RAM plus page file) was free. The recording is safe; close apps you are not using so transcription has room. |
+| Kalam 1.4.1 or older closes when you click Record or Stop | A graphics driver error ended the app. Update to 1.4.2 or later, or set **Settings → Graphics card → Off**. |
 | Kalam says it "closed unexpectedly while starting the graphics card" | The driver crashed once, so Kalam now uses the CPU. After a driver update, use **Test graphics card again**. |
 | "System audio unavailable" on macOS | Needs macOS 14.6+. Allow **System Audio Recording** for Kalam in **System Settings → Privacy & Security**, then restart Kalam. |
 | No meeting audio recorded (Windows) | In Settings, select the output device your meeting app actually uses (headset vs speakers). |

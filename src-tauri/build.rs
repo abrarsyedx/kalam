@@ -30,6 +30,7 @@ const VOICEPRINT_MIN_BYTES: u64 = 30_000_000;
 const MODEL_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
 fn main() {
+    build_native_helpers();
     for (file, min_bytes) in MODELS {
         ensure_model(file, min_bytes);
     }
@@ -81,6 +82,22 @@ fn link_clang_runtime() {
     } else {
         println!("cargo:warning={} not found; linking may fail with \"___isPlatformVersionAtLeast\" undefined", lib.display());
     }
+}
+
+/// native/guard.cpp: catches C++ exceptions thrown by whisper.cpp's GPU
+/// backends (see src/native.rs), plus small platform helpers.
+fn build_native_helpers() {
+    println!("cargo:rerun-if-changed=native/guard.cpp");
+    let mut build = cc::Build::new();
+    build.cpp(true).file("native/guard.cpp");
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        // Exceptions on, and do not assume extern "C" functions never throw:
+        // both the guarded callback and Rust panics unwind through this code.
+        build.flag("/EHs").flag("/EHc-");
+    } else {
+        build.flag("-fexceptions").flag("-std=c++17");
+    }
+    build.compile("kalam_native");
 }
 
 fn ensure_model(file: &str, min_bytes: u64) {
