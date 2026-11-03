@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -56,13 +56,99 @@ const POLISH_BEAM: i32 = 3;
 /// live preview so the screen stays responsive.
 pub const HEAVY_MODEL_BYTES: u64 = 300_000_000;
 
-/// Serialises model loading and all GPU work. whisper.cpp's GPU backends are
-/// not safe to set up from two threads at once (loading the preview and main
-/// models in parallel crashed the Vulkan backend).
-static GPU_LOCK: Mutex<()> = Mutex::new(());
+/// Who is asking to use the speech engine (see `ComputeGate`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Priority {
+    /// Live transcription and model loading: never kept waiting for background work.
+    Live,
+    /// The polish pass after a recording: runs in the gaps between live work.
+    Background,
+}
 
-fn gpu_lock() -> std::sync::MutexGuard<'static, ()> {
-    GPU_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+/// Serialises model loading and all transcription.
+/// - whisper.cpp's GPU backends are not safe to use from two threads at once
+///   (loading the preview and main models in parallel crashed the Vulkan backend).
+/// - The previous recording's polish pass keeps running while a new recording
+///   is live; it must not hold up the live text, so when both are waiting,
+///   live work always goes first.
+struct ComputeGate {
+    state: Mutex<GateState>,
+    changed: Condvar,
+}
+
+struct GateState {
+    busy: bool,
+    live_waiting: usize,
+}
+
+/// Holding the gate; released on drop.
+struct Turn(&'static ComputeGate);
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.0.lock().busy = false;
+        self.0.changed.notify_all();
+    }
+}
+
+impl ComputeGate {
+    const fn new() -> Self {
+        Self { state: Mutex::new(GateState { busy: false, live_waiting: 0 }), changed: Condvar::new() }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn enter(&'static self, priority: Priority) -> Turn {
+        let mut s = self.lock();
+        if priority == Priority::Live {
+            s.live_waiting += 1;
+        }
+        while s.busy || (priority == Priority::Background && s.live_waiting > 0) {
+            s = self.changed.wait(s).unwrap_or_else(|e| e.into_inner());
+        }
+        if priority == Priority::Live {
+            s.live_waiting -= 1;
+        }
+        s.busy = true;
+        Turn(self)
+    }
+}
+
+static GATE: ComputeGate = ComputeGate::new();
+
+/// Model loading and GPU set-up: as urgent as live transcription.
+fn gpu_lock() -> Turn {
+    GATE.enter(Priority::Live)
+}
+
+/// Polish passes of finished recordings, one at a time; how many are waiting or running.
+static FINISH_TURN: Mutex<()> = Mutex::new(());
+static FINISHES_PENDING: AtomicUsize = AtomicUsize::new(0);
+
+/// Recordings whose finishing pass (polish / speakers) is running or waiting its turn.
+pub fn finishes_pending() -> usize {
+    FINISHES_PENDING.load(Ordering::SeqCst)
+}
+
+/// Recordings currently being transcribed live (started, not yet stopped).
+static LIVE_RECORDINGS: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts one live recording for as long as it is held.
+struct LiveRecording;
+
+impl LiveRecording {
+    fn start() -> Self {
+        LIVE_RECORDINGS.fetch_add(1, Ordering::SeqCst);
+        LiveRecording
+    }
+}
+
+impl Drop for LiveRecording {
+    fn drop(&mut self) {
+        LIVE_RECORDINGS.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// The GPU backend threw (see `native::guard`): the graphics driver failed,
@@ -77,6 +163,31 @@ impl std::fmt::Display for GpuFault {
 }
 
 impl std::error::Error for GpuFault {}
+
+/// A polish window on the processor was stopped because a new recording
+/// went live; it is redone once that recording stops.
+#[derive(Debug)]
+struct Preempted;
+
+impl std::fmt::Display for Preempted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("polishing paused for a live recording")
+    }
+}
+
+impl std::error::Error for Preempted {}
+
+/// whisper.cpp abort callback for polish windows on the processor: stop as
+/// soon as a recording goes live. `data` points to the window's "preempted"
+/// flag. (whisper-rs 0.16's `set_abort_callback_safe` reads its boxed closure
+/// back as the wrong type, so it must not be used.)
+unsafe extern "C" fn abort_if_recording(data: *mut std::ffi::c_void) -> bool {
+    let stop = LIVE_RECORDINGS.load(Ordering::SeqCst) > 0;
+    if stop && !data.is_null() {
+        unsafe { (*(data as *const AtomicBool)).store(true, Ordering::SeqCst) };
+    }
+    stop
+}
 
 /// Tests: KALAM_TEST_GPU_FAULT=1 makes the first GPU transcription throw.
 #[cfg(test)]
@@ -415,6 +526,8 @@ pub enum AsrEvent {
 pub enum FinishStage {
     /// Re-transcribing the recording carefully.
     Polish,
+    /// Polishing on the processor is paused while a new recording is live.
+    Waiting,
     /// Telling the voices apart across the whole recording.
     Speakers,
 }
@@ -587,6 +700,16 @@ impl Engine {
         if preview {
             p.set_temperature_inc(0.0);
         }
+        // On the processor, a polish window takes ~15 s and would hold up a new
+        // recording's live text; stop it as soon as one goes live (redone later).
+        let preempted = AtomicBool::new(false);
+        if pass == Pass::Polish && !self.on_gpu {
+            // `preempted` outlives the whisper call below, which is the only user.
+            unsafe {
+                p.set_abort_callback(Some(abort_if_recording));
+                p.set_abort_callback_user_data(&preempted as *const AtomicBool as *mut std::ffi::c_void);
+            }
+        }
 
         // whisper.cpp ignores clips shorter than 1 s; pad with silence.
         let min_len = ASR_RATE as usize * 11 / 10;
@@ -603,8 +726,9 @@ impl Engine {
         if self.faulted {
             return Err(anyhow::Error::new(GpuFault("the graphics card failed earlier".into())));
         }
+        // Live work goes first; a polish pass behind a new recording uses the gaps.
+        let _turn = GATE.enter(if pass == Pass::Polish { Priority::Background } else { Priority::Live });
         if self.on_gpu {
-            let _gpu = gpu_lock();
             match native::guard(|| {
                 #[cfg(test)]
                 if simulate_gpu_fault() {
@@ -619,7 +743,11 @@ impl Engine {
                 }
             }
         } else {
-            self.state.full(p, input).map_err(|e| anyhow!("whisper: {e}"))?;
+            let result = self.state.full(p, input);
+            if preempted.load(Ordering::SeqCst) {
+                return Err(anyhow::Error::new(Preempted));
+            }
+            result.map_err(|e| anyhow!("whisper: {e}"))?;
         }
         let audio_ms = audio.len() as u64 * 1000 / ASR_RATE as u64;
         let mut out = Vec::new();
@@ -765,6 +893,7 @@ impl Worker {
     }
 
     fn run(mut self, rx: &Receiver<AsrMsg>, emit: &mut dyn FnMut(AsrEvent)) {
+        let mut live = Some(LiveRecording::start());
         loop {
             let mut flush = false;
             let mut stop = false;
@@ -786,10 +915,17 @@ impl Worker {
             if flush || stop {
                 self.commit(self.buf.len(), emit);
                 if stop {
+                    drop(live.take()); // this recording is no longer live
                     let finishing = !self.spans.is_empty() && (self.cfg.polish || self.voice.is_some());
                     emit(AsrEvent::LiveDone { finishing });
                     if finishing {
-                        self.finish(emit);
+                        FINISHES_PENDING.fetch_add(1, Ordering::SeqCst);
+                        {
+                            // One finishing pass at a time: an earlier recording's goes first.
+                            let _turn = FINISH_TURN.lock().unwrap_or_else(|e| e.into_inner());
+                            self.finish(emit);
+                        }
+                        FINISHES_PENDING.fetch_sub(1, Ordering::SeqCst);
                     }
                     return;
                 }
@@ -996,6 +1132,9 @@ impl Worker {
     /// After Stop: polish the transcript and/or identify speakers across the
     /// whole recording, then hand over the finished transcript.
     fn finish(&mut self, emit: &mut dyn FnMut(AsrEvent)) {
+        // Live previews are over: free the preview model's working memory, which
+        // a new recording may need while this pass runs.
+        self.preview_engine = None;
         let mut segments = self.live_segments.clone();
         let mut improved = false;
         if self.cfg.polish {
@@ -1093,17 +1232,38 @@ impl Worker {
         let mut context = String::new();
         emit(AsrEvent::FinishProgress { stage: FinishStage::Polish, progress: 0.0 });
         for (start, end) in windows {
-            if self.cfg.cancel.load(Ordering::SeqCst) {
-                return Err("Polishing skipped; the live transcript is saved.".into());
-            }
             let audio: Vec<f32> = self.history[start as usize..(end as usize).min(self.history.len())]
                 .iter()
                 .map(|s| *s as f32 / 32768.0)
                 .collect();
             let prompt = self.prompt(&context);
-            let raw = match self.transcribe_main(&audio, &prompt, Pass::Polish, emit) {
-                Ok(raw) => raw,
-                Err(e) => return Err(format!("Polishing failed ({e:#}); the live transcript is saved.")),
+            let raw = loop {
+                // On the processor, polishing alongside a new recording would make
+                // its live text fall far behind, so it pauses until that recording
+                // stops. On a GPU it runs in the gaps between live work instead.
+                let mut paused = false;
+                while !self.engine.on_gpu
+                    && LIVE_RECORDINGS.load(Ordering::SeqCst) > 0
+                    && !self.cfg.cancel.load(Ordering::SeqCst)
+                {
+                    if !paused {
+                        paused = true;
+                        emit(AsrEvent::FinishProgress { stage: FinishStage::Waiting, progress: done as f32 / total.max(1) as f32 });
+                    }
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+                if self.cfg.cancel.load(Ordering::SeqCst) {
+                    return Err("Polishing skipped; the live transcript is saved.".into());
+                }
+                if paused {
+                    emit(AsrEvent::FinishProgress { stage: FinishStage::Polish, progress: done as f32 / total.max(1) as f32 });
+                }
+                match self.transcribe_main(&audio, &prompt, Pass::Polish, emit) {
+                    Ok(raw) => break raw,
+                    // A recording started mid-window: wait for it, then redo the window.
+                    Err(e) if e.is::<Preempted>() => continue,
+                    Err(e) => return Err(format!("Polishing failed ({e:#}); the live transcript is saved.")),
+                }
             };
             let offset_ms = start * 1000 / ASR_RATE as u64;
             for r in raw {
@@ -1264,6 +1424,31 @@ fn is_hallucination(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_work_goes_before_background_work() {
+        let gate: &'static ComputeGate = Box::leak(Box::new(ComputeGate::new()));
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let busy = gate.enter(Priority::Live);
+        let wait_for = |what: &'static str, priority: Priority| {
+            let order = Arc::clone(&order);
+            let t = std::thread::spawn(move || {
+                let _turn = gate.enter(priority);
+                order.lock().unwrap().push(what);
+            });
+            std::thread::sleep(Duration::from_millis(80)); // now waiting
+            t
+        };
+        // Background work queued first, live work second: live still goes first.
+        let background = wait_for("background", Priority::Background);
+        let live = wait_for("live", Priority::Live);
+        drop(busy);
+        live.join().unwrap();
+        background.join().unwrap();
+        assert_eq!(*order.lock().unwrap(), ["live", "background"]);
+        // With no live work waiting, background work runs straight away.
+        drop(gate.enter(Priority::Background));
+    }
 
     #[test]
     fn cleans_annotations() {
@@ -1658,6 +1843,88 @@ mod tests {
         let mut engine = Engine::new(models.wait(Duration::from_secs(120)).unwrap().0, &cfg).unwrap();
         for s in engine.transcribe(&audio, "", Pass::Final).unwrap() {
             println!("[{}-{}] ns={:.2} {}", s.t0_ms, s.t1_ms, s.no_speech, s.text);
+        }
+    }
+
+    /// Recording 1 stops and its polish pass starts; recording 2 starts right
+    /// away and is fed in real time. Recording 2 must get live text while
+    /// recording 1 is polished, and both must end up polished (not skipped).
+    /// Feeds the transcriber directly (no audio devices), as Session does.
+    ///   KALAM_TEST_WAV=jfk.wav cargo test --release polish_runs_behind -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn polish_runs_behind_a_new_recording() {
+        use std::sync::mpsc;
+        let audio = crate::test_util::test_audio();
+        let models = crate::test_util::test_models();
+        models.wait(Duration::from_secs(120)).expect("model loads");
+        let t0 = Instant::now();
+        let log = Arc::new(Mutex::new(Vec::<(f32, &'static str, String)>::new()));
+        let start = |who: &'static str| {
+            let (tx, rx) = mpsc::channel();
+            let mut cfg = WorkerConfig::for_test(true, false);
+            cfg.polish = true;
+            // With speaker labels, a recording is always finished (polished or
+            // labelled), even when the polish safety net keeps the live text.
+            cfg.speakers = SpeakerMode::Voice(PathBuf::from("resources/speakers/titanet_small.onnx"));
+            let log = Arc::clone(&log);
+            let worker = spawn_worker(Arc::clone(&models), cfg, rx, move |ev| {
+                let entry = match ev {
+                    AsrEvent::Final(segs) => Some(("final", segs.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" "))),
+                    AsrEvent::Finished(segs) => Some(("polished", segs.iter().map(|s| s.text.clone()).collect::<Vec<_>>().join(" "))),
+                    AsrEvent::FinishAbandoned(m) => Some(("abandoned", m)),
+                    AsrEvent::Error(e) => Some(("error", e)),
+                    AsrEvent::LiveDone { finishing } => Some(("live done", format!("finishing: {finishing}"))),
+                    _ => None,
+                };
+                if let Some((kind, text)) = entry {
+                    let t = t0.elapsed().as_secs_f32();
+                    println!("{t:>6.2}s {who} {kind}: {text}");
+                    log.lock().unwrap().push((t, who, format!("{kind}|{text}")));
+                }
+            });
+            (tx, worker)
+        };
+        let feed = |tx: &mpsc::Sender<AsrMsg>, realtime: bool| {
+            let silence = vec![0.0f32; 32_000];
+            for block in audio.iter().chain(silence.iter()).copied().collect::<Vec<_>>().chunks(640) {
+                let rms = (block.iter().map(|s| s * s).sum::<f32>() / block.len() as f32).sqrt();
+                tx.send(AsrMsg::Audio { samples: block.to_vec(), mic_rms: rms, system_rms: 0.0 }).unwrap();
+                if realtime {
+                    std::thread::sleep(Duration::from_millis(40));
+                }
+            }
+        };
+
+        let (tx1, worker1) = start("rec1");
+        feed(&tx1, false);
+        tx1.send(AsrMsg::Stop).unwrap();
+        // Wait until recording 1's live part is done and its polish pass begins.
+        while !log.lock().unwrap().iter().any(|(_, who, e)| *who == "rec1" && e.starts_with("live done")) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let (tx2, worker2) = start("rec2");
+        feed(&tx2, true);
+        tx2.send(AsrMsg::Stop).unwrap();
+        worker1.join().unwrap();
+        worker2.join().unwrap();
+
+        let log = log.lock().unwrap();
+        let first = |who: &str, kind: &str| log.iter().find(|(_, w, e)| *w == who && e.starts_with(kind)).map(|(t, _, _)| *t);
+        let said = |who: &str, kind: &str| {
+            log.iter().any(|(_, w, e)| *w == who && e.starts_with(kind) && e.to_lowercase().contains("ask what you can do"))
+        };
+        assert!(!log.iter().any(|(_, _, e)| e.starts_with("error") || e.starts_with("abandoned")), "no errors, nothing skipped");
+        assert!(said("rec1", "polished") && said("rec2", "polished"), "both recordings polished");
+        assert!(said("rec2", "final"), "recording 2 transcribed live");
+        let (polish1_done, live2) = (first("rec1", "polished").unwrap(), first("rec2", "final").unwrap());
+        println!("recording 1 polished at {polish1_done:.1}s; recording 2's first live text at {live2:.1}s");
+        let live2_done = first("rec2", "live done").unwrap();
+        if polish1_done > live2 {
+            println!("=> recording 2 got live text while recording 1 was still being polished");
+        }
+        if polish1_done > live2_done {
+            println!("=> recording 1 finished polishing after recording 2 stopped (processor: paused while live)");
         }
     }
 

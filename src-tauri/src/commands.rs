@@ -72,7 +72,7 @@ pub fn get_status(app: AppHandle, state: State<'_, AppState>) -> Status {
             },
         ],
         gpu: state.gpu.lock().unwrap().clone(),
-        polishing: state.polisher.lock().unwrap().as_ref().is_some_and(|p| !p.is_finished()),
+        polishing: state.polishing(),
         version: app.package_info().version.to_string(),
     }
 }
@@ -143,8 +143,8 @@ pub async fn list_devices() -> CmdResult<DeviceList> {
 pub async fn start_recording(app: AppHandle) -> CmdResult<SessionInfo> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        // A new recording takes priority over polishing the previous one.
-        state.cancel_polish();
+        // Polishing of earlier recordings carries on; their passes yield to
+        // this recording's live transcription (see transcribe::ComputeGate).
         let mut slot = state.session.lock().unwrap();
         if slot.is_some() {
             return Err("Already recording".to_string());
@@ -206,7 +206,9 @@ pub async fn stop_recording(app: AppHandle) -> CmdResult<SavedFiles> {
         match session {
             Some(s) => {
                 let (saved, polisher) = s.stop().map_err(|e| format!("{e:#}"))?;
-                *state.polisher.lock().unwrap() = polisher;
+                let mut polishers = state.polishers.lock().unwrap();
+                polishers.retain(|p| !p.is_finished());
+                polishers.extend(polisher);
                 Ok(saved)
             }
             None => Err("Not recording".into()),
@@ -216,7 +218,8 @@ pub async fn stop_recording(app: AppHandle) -> CmdResult<SavedFiles> {
     .map_err(err)?
 }
 
-/// Skip polishing the last recording; its live transcript stays saved.
+/// Skip polishing (every recording still being polished or waiting); their
+/// live transcripts stay saved.
 #[tauri::command]
 pub async fn cancel_polish(app: AppHandle) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().cancel_polish())

@@ -1,6 +1,6 @@
 [package]
 name = "kalam"
-version = "1.4.2"
+version = "1.4.4"
 description = "Kalam - offline meeting recorder and live transcriber"
 authors = ["Kalam contributors"]
 license = "MIT"

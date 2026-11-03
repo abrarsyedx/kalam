@@ -10,7 +10,7 @@ const el = {
   stateLabel: $("state-label"), timer: $("timer"),
   micMeter: $("meter-mic"), sysMeter: $("meter-sys"),
   paper: $("paper"), empty: $("empty"), lines: $("lines"), preview: $("preview"), jump: $("btn-jump"),
-  folder: $("btn-folder"), saved: $("saved"), openDocx: $("btn-open-docx"), openMp3: $("btn-open-mp3"),
+  folder: $("btn-folder"), saved: $("saved"), openDocx: $("btn-open-docx"), openMp3: $("btn-open-mp3"), openFolder: $("btn-open-folder"),
   modelChip: $("model-chip"), modelSelect: $("model-select"), modelState: $("model-state"),
   gpuBadge: $("gpu-badge"), polish: $("polish"), polishText: $("polish-text"),
   toast: $("toast"), dialog: $("settings"), form: $("settings-form"),
@@ -40,6 +40,11 @@ function toast(message, kind = "info", ms = 5000) {
   toastTimer = setTimeout(() => (el.toast.hidden = true), ms);
 }
 el.toast.addEventListener("click", () => (el.toast.hidden = true));
+
+// The footer can wrap onto two lines; floating elements sit just above it.
+new ResizeObserver(([entry]) => {
+  document.documentElement.style.setProperty("--footer-h", `${Math.ceil(entry.target.getBoundingClientRect().height)}px`);
+}).observe(document.querySelector(".footer"));
 
 function setButton(btn, icon, label) {
   btn.querySelector("use").setAttribute("href", `#i-${icon}`);
@@ -267,15 +272,37 @@ function setGpuStatus(g) {
 
 /** Polish pass progress in the footer. */
 function setPolish(update) {
+  // Another recording may be waiting to be polished after this one finished.
+  if (update && update.state !== "running" && update.pending > 0) {
+    update = { state: "running", stage: "polish", progress: 0, next: true };
+  }
   if (!update || update.state !== "running") {
     el.polish.hidden = true;
     return;
   }
   el.polish.hidden = false;
   const pct = Math.round((update.progress || 0) * 100);
-  const what = update.stage === "speakers" ? "Identifying speakers" : "Polishing transcript";
+  // While a new recording runs, the bar is about an earlier one.
+  const earlier = mode !== "idle" && mode !== "stopping";
+  if (update.stage === "waiting") {
+    el.polishText.textContent = earlier
+      ? `Previous transcript: polishing resumes after this recording (${pct}% done)`
+      : `Polishing paused… ${pct}%`;
+    el.polish.querySelector(".fill").style.width = `${pct}%`;
+    return;
+  }
+  const what = update.next
+    ? "Polishing the next transcript"
+    : update.stage === "speakers"
+      ? (earlier ? "Identifying speakers in the previous recording" : "Identifying speakers")
+      : (earlier ? "Polishing the previous transcript" : "Polishing transcript");
   el.polishText.textContent = `${what}… ${pct}%`;
   el.polish.querySelector(".fill").style.width = `${pct}%`;
+}
+
+/** Whether this transcript is the one on screen (finished, not a new recording). */
+function isShownTranscript(docxPath) {
+  return mode === "idle" && lastSaved && lastSaved.docxPath === docxPath;
 }
 
 $("btn-polish-skip").addEventListener("click", async () => {
@@ -310,12 +337,10 @@ async function start() {
   if (mode !== "idle") return;
   setMode("starting");
   try {
-    const polishing = !el.polish.hidden;
     const info = await invoke("start_recording");
     clearTranscript();
     el.saved.hidden = true;
-    setPolish(null);
-    if (polishing) toast("Polishing of the previous transcript was stopped; its live version is saved.");
+    // Polishing of the previous recording (if any) carries on in the footer.
     el.timer.textContent = clock(0);
     updateSources(info);
     setMode("recording");
@@ -357,9 +382,12 @@ async function stop() {
     const name = (p) => p.split(/[\\/]/).pop();
     el.openDocx.title = `Open ${name(saved.docxPath)}`;
     el.openMp3.title = `Open ${name(saved.mp3Path)}`;
+    // Each recording has its own folder in the save location.
+    const folder = name(saved.docxPath.replace(/[\\/][^\\/]*$/, ""));
+    el.openFolder.title = `Show the folder ${folder}`;
     if (saved.warnings?.length) toast(saved.warnings.join("\n"), "error", 9000);
-    else if (saved.polishing) toast(`Saved ${name(saved.mp3Path)} and ${name(saved.docxPath)}. Polishing the transcript now…`);
-    else toast(`Saved ${name(saved.mp3Path)} and ${name(saved.docxPath)}`);
+    else if (saved.polishing) toast(`Saved the recording and transcript in the folder ${folder}. Polishing the transcript now…`);
+    else toast(`Saved the recording and transcript in the folder ${folder}`);
     if (saved.polishing) setPolish({ state: "running", progress: 0 });
   } catch (e) {
     toast(String(e), "error", 9000);
@@ -385,6 +413,15 @@ el.pause.addEventListener("click", togglePause);
 el.stop.addEventListener("click", stop);
 el.openDocx.addEventListener("click", () => lastSaved && openPath(lastSaved.docxPath));
 el.openMp3.addEventListener("click", () => lastSaved && openPath(lastSaved.mp3Path));
+el.openFolder.addEventListener("click", async () => {
+  if (!lastSaved) return;
+  try {
+    // Opens the recording's own folder with its transcript selected.
+    await invoke("reveal_path", { path: lastSaved.docxPath });
+  } catch (e) {
+    toast(String(e), "error");
+  }
+});
 el.folder.addEventListener("click", async () => {
   try {
     await invoke("reveal_path", { path: settings.outputDir });
@@ -612,14 +649,17 @@ async function boot() {
     listen("kalam://polish", (e) => {
       const u = e.payload;
       setPolish(u);
-      if (u.state === "done") toast(u.message || "Transcript polished and saved.", u.message ? "error" : "info");
-      if (u.state === "abandoned" && u.message) toast(u.message);
+      const file = (u.docxPath || "").split(/[\\/]/).pop();
+      const which = isShownTranscript(u.docxPath) || !file ? "Transcript" : file;
+      if (u.state === "done") toast(u.message || `${which} polished and saved.`, u.message ? "error" : "info");
+      if (u.state === "abandoned" && u.message) toast(file && !isShownTranscript(u.docxPath) ? `${file}: ${u.message}` : u.message);
     }),
     listen("kalam://polished", (e) => {
-      // Show the polished text, unless a new recording is already on screen.
-      if (mode === "idle") {
+      // Show the polished text only if that transcript is the one on screen
+      // (not while a new recording is running, nor for an older recording).
+      if (isShownTranscript(e.payload.docxPath)) {
         clearTranscript();
-        addSegments(e.payload);
+        addSegments(e.payload.segments);
       }
     }),
   ]);

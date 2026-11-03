@@ -227,7 +227,8 @@ body.paused .timer { animation: blink 1.2s steps(2, start) infinite; }
 
 /* "Latest": back to the newest transcript after scrolling up. Bottom-left of the page. */
 .jump {
-  position: fixed; left: 36px; bottom: 68px; z-index: 5;
+  /* Just above the footer, whose height varies (it can wrap onto two lines). */
+  position: fixed; left: 36px; bottom: calc(var(--footer-h, 52px) + 16px); z-index: 5;
   display: inline-flex; align-items: center; gap: 6px;
   height: 34px; padding: 0 14px 0 10px; border: 0; border-radius: 999px;
   background: var(--blue); color: #fff; font: 600 12.5px var(--sans);
@@ -239,10 +240,13 @@ body.paused .timer { animation: blink 1.2s steps(2, start) infinite; }
 
 /* ---------- footer ---------- */
 .footer {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
   padding: 10px 24px 14px; color: var(--muted); font-size: 12.5px; min-height: 52px;
 }
-.saving-to { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The save folder gives way first; polishing and the saved-file buttons wrap
+   onto a second line rather than being squashed. */
+.saving-to { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 160px; }
+.saving-to span { white-space: nowrap; }
 .saving-to svg { width: 16px; height: 16px; }
 .link {
   border: 0; background: none; padding: 0; color: var(--ink-soft);
@@ -251,10 +255,11 @@ body.paused .timer { animation: blink 1.2s steps(2, start) infinite; }
 }
 .link:hover { color: var(--ink); text-decoration-color: currentColor; }
 .link.small { font-size: 12px; margin-top: 4px; }
-.polish { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); animation: write-in .3s ease-out; }
+.polish { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); animation: write-in .3s ease-out; flex: none; white-space: nowrap; }
+.polish .link { flex: none; }
 .polish-bar { width: 120px; flex: none; }
 .polish-bar .fill { background: var(--blue); transition: width .3s ease; }
-.saved { display: flex; align-items: center; gap: 8px; animation: write-in .3s ease-out; }
+.saved { display: flex; align-items: center; gap: 8px; animation: write-in .3s ease-out; flex: none; }
 .saved-label { color: var(--ok); font-weight: 600; }
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -266,7 +271,7 @@ body.paused .timer { animation: blink 1.2s steps(2, start) infinite; }
 
 /* ---------- toast ---------- */
 .toast {
-  position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(var(--footer-h, 52px) + 12px); transform: translateX(-50%);
   max-width: min(640px, 90vw); padding: 10px 16px; border-radius: 12px;
   background: var(--ink); color: var(--surface); box-shadow: var(--shadow);
   font-size: 13px; white-space: pre-line; z-index: 10; animation: write-in .2s ease-out;

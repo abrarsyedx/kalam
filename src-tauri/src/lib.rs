@@ -44,7 +44,9 @@ pub struct AppState {
     pub gpu: Mutex<GpuStatus>,
     pub session: Mutex<Option<Session>>,
     /// Polish pass of the last recording, if still running.
-    pub polisher: Mutex<Option<Polisher>>,
+    /// Finishing passes of earlier recordings that are still running (they
+    /// keep going while a new recording is made).
+    pub polishers: Mutex<Vec<Polisher>>,
 }
 
 impl AppState {
@@ -62,11 +64,19 @@ impl AppState {
     }
 
     /// Stop a running polish pass (its live transcript stays saved).
+    /// Skip all polishing still running or waiting; live transcripts stay saved.
     pub fn cancel_polish(&self) {
-        let polisher = self.polisher.lock().unwrap().take();
-        if let Some(p) = polisher {
+        let polishers = std::mem::take(&mut *self.polishers.lock().unwrap());
+        for p in polishers {
             p.cancel_and_wait();
         }
+    }
+
+    /// Whether an earlier recording is still being polished.
+    pub fn polishing(&self) -> bool {
+        let mut polishers = self.polishers.lock().unwrap();
+        polishers.retain(|p| !p.is_finished());
+        !polishers.is_empty()
     }
 }
 
@@ -233,7 +243,7 @@ pub fn run() {
                 models,
                 gpu: Mutex::new(GpuStatus::Checking),
                 session: Mutex::new(None),
-                polisher: Mutex::new(None),
+                polishers: Mutex::new(Vec::new()),
             });
             let handle = app.handle().clone();
             std::thread::Builder::new()

@@ -31,10 +31,22 @@ pub const EV_POLISHED: &str = "kalam://polished";
 pub struct PolishUpdate {
     /// "running", "done" or "abandoned".
     pub state: &'static str,
-    /// "polish" or "speakers" while running.
+    /// "polish", "speakers" or "waiting" (paused while a new recording is live) while running.
     pub stage: &'static str,
     pub progress: f32,
     pub message: Option<String>,
+    /// The transcript this is about (several recordings can be finishing).
+    pub docx_path: String,
+    /// Other recordings still waiting to be finished after this one.
+    pub pending: usize,
+}
+
+/// The finished transcript of one recording (`kalam://polished`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolishedTranscript<'a> {
+    pub docx_path: String,
+    pub segments: &'a [Segment],
 }
 
 const QUALITY_LIVE: &str = "Live transcript";
@@ -133,7 +145,10 @@ impl Session {
         std::fs::create_dir_all(&out_dir)
             .with_context(|| format!("Cannot create the output folder {}", out_dir.display()))?;
         let started = chrono::Local::now();
-        let base = unique_base(&out_dir, &format!("Kalam_{}", started.format("%Y-%m-%d_%H-%M-%S")));
+        // Each recording gets its own folder: <save folder>/Kalam_<date>_<time>/
+        // holding Kalam_<date>_<time>.mp3 and .docx (created once the devices are open).
+        let folder = unique_folder(&out_dir, &format!("Kalam_{}", started.format("%Y-%m-%d_%H-%M-%S")));
+        let base = folder.join(folder.file_name().unwrap_or_default());
         let mp3_path = base.with_extension("mp3");
         let docx_path = base.with_extension("docx");
 
@@ -168,11 +183,16 @@ impl Session {
         let mic_buf = mic_buf.filter(|_| report.mic_device.is_some());
         let sys_buf = sys_buf.filter(|_| report.system_device.is_some());
 
-        let mp3 = match Mp3Writer::create(&mp3_path, MIX_RATE, settings.mp3_bitrate) {
+        let mp3 = match std::fs::create_dir_all(&folder)
+            .with_context(|| format!("Cannot create the recording folder {}", folder.display()))
+            .and_then(|()| Mp3Writer::create(&mp3_path, MIX_RATE, settings.mp3_bitrate))
+        {
             Ok(w) => w,
             Err(e) => {
                 let _ = capture_stop.send(());
                 let _ = capture.join();
+                // Leave nothing behind: removes the folder only if it is still empty.
+                let _ = std::fs::remove_dir(&folder);
                 return Err(e);
             }
         };
@@ -221,7 +241,15 @@ impl Session {
             let app = app.clone();
             let transcript = Arc::clone(&transcript);
             let recorded_ms = Arc::clone(&recorded_ms);
-            let update = |state, stage, progress, message| PolishUpdate { state, stage, progress, message };
+            let docx_for_ui = docx_path.to_string_lossy().into_owned();
+            let update = move |state, stage, progress, message| PolishUpdate {
+                state,
+                stage,
+                progress,
+                message,
+                docx_path: docx_for_ui.clone(),
+                pending: crate::transcribe::finishes_pending().saturating_sub(1),
+            };
             let both_sources = mic_buf.is_some() && sys_buf.is_some();
             let speakers = match settings.speakers.as_str() {
                 SPEAKERS_VOICE if voice_model.is_file() => SpeakerMode::Voice(voice_model.to_path_buf()),
@@ -270,6 +298,7 @@ impl Session {
                     AsrEvent::FinishProgress { stage, progress } => {
                         let stage = match stage {
                             FinishStage::Polish => "polish",
+                            FinishStage::Waiting => "waiting",
                             FinishStage::Speakers => "speakers",
                         };
                         let _ = app.emit(EV_POLISH, update("running", stage, progress, None));
@@ -280,7 +309,8 @@ impl Session {
                         t.meta.quality = Some(finished_quality.into());
                         let message = t.save().err().map(|e| format!("Could not save the finished transcript: {e:#}"));
                         log::info!("Transcript finished: {} segments", t.segments.len());
-                        let _ = app.emit(EV_POLISHED, &t.segments);
+                        let docx_path = t.path.to_string_lossy().into_owned();
+                        let _ = app.emit(EV_POLISHED, PolishedTranscript { docx_path, segments: &t.segments });
                         let _ = app.emit(EV_POLISH, update("done", "", 1.0, message));
                     }
                     AsrEvent::FinishAbandoned(message) => {
@@ -398,22 +428,45 @@ fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// `dir/stem`, with " (2)", " (3)"... appended if files already exist.
-fn unique_base(dir: &Path, stem: &str) -> PathBuf {
-    let taken = |b: &PathBuf| b.with_extension("mp3").exists() || b.with_extension("docx").exists();
-    let mut base = dir.join(stem);
+/// The folder for a new recording: `dir/stem`, with " (2)", " (3)"... appended
+/// if a folder (or, from Kalam 1.4.2 and older, a recording) of that name exists.
+fn unique_folder(dir: &Path, stem: &str) -> PathBuf {
+    let taken = |name: &str| {
+        let p = dir.join(name);
+        p.exists() || p.with_extension("mp3").exists() || p.with_extension("docx").exists()
+    };
+    let mut name = stem.to_string();
     let mut n = 2;
-    while taken(&base) {
-        base = dir.join(format!("{stem} ({n})"));
+    while taken(&name) {
+        name = format!("{stem} ({n})");
         n += 1;
     }
-    base
+    dir.join(name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_util::{play_on_speakers, test_speech};
+
+    #[test]
+    fn each_recording_gets_its_own_folder() {
+        let dir = std::env::temp_dir().join(format!("kalam-folder-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stem = "Kalam_2026-11-03_10-00-00";
+        assert_eq!(unique_folder(&dir, stem), dir.join(stem));
+        // A recording started in the same second gets the next free name.
+        std::fs::create_dir(dir.join(stem)).unwrap();
+        assert_eq!(unique_folder(&dir, stem), dir.join(format!("{stem} (2)")));
+        std::fs::create_dir(dir.join(format!("{stem} (2)"))).unwrap();
+        assert_eq!(unique_folder(&dir, stem), dir.join(format!("{stem} (3)")));
+        // Recordings saved directly in the save folder by older versions are not reused either.
+        let older = "Kalam_2026-10-01_09-00-00";
+        std::fs::write(dir.join(format!("{older}.mp3")), b"").unwrap();
+        assert_eq!(unique_folder(&dir, older), dir.join(format!("{older} (2)")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A full recording exactly as the Record / Pause / Resume / Stop buttons
     /// drive it, inside a mock Tauri app. Plays speech on the speakers.
@@ -441,6 +494,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(1000));
         let (saved, polisher) = session.stop().expect("session stops");
         println!("saved: {saved:?}");
+        // MP3 and DOCX share a folder of their own inside the save folder.
+        let folder = Path::new(&saved.mp3_path).parent().unwrap();
+        assert_eq!(folder, Path::new(&saved.docx_path).parent().unwrap());
+        assert_eq!(folder.parent().unwrap(), dir.as_path());
+        assert_eq!(folder.file_name(), Path::new(&saved.mp3_path).file_stem());
         let live = docx_rs::read_docx(&std::fs::read(&saved.docx_path).unwrap()).unwrap().json();
         assert!(live.contains("being finished"), "live transcript saved before finishing");
         let started = std::time::Instant::now();
@@ -456,5 +514,60 @@ mod tests {
         assert!(doc.contains("Speaker 1"), "speaker label missing");
         assert!(!doc.contains("Recording in progress"), "final save happened");
         assert!(doc.contains("Polished after recording"), "polished transcript saved");
+    }
+
+    /// Stop a recording and start the next one straight away: the first one's
+    /// polish pass keeps going while the second records and transcribes live,
+    /// and both end up polished. Plays speech on the speakers twice.
+    ///   KALAM_TEST_WAV=jfk.wav cargo test --release polishing_continues -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn polishing_continues_during_the_next_recording() {
+        let app = tauri::test::mock_app();
+        let dir = std::env::temp_dir().join("kalam-overlap-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let settings = Settings {
+            output_dir: dir.to_string_lossy().into_owned(),
+            polish: crate::settings::POLISH_ALWAYS.into(),
+            ..Settings::default()
+        };
+        let models = crate::test_util::test_models();
+        let voice_model = PathBuf::from("resources/speakers/titanet_small.onnx");
+        let read = |path: &str| docx_rs::read_docx(&std::fs::read(path).unwrap()).unwrap().json();
+        let said = |doc: &str| doc.to_lowercase().contains("ask what you can do for your country");
+
+        // Recording 1, then Stop: its polish pass starts.
+        let first = Session::start(app.handle(), &settings, models.clone(), &voice_model).expect("first starts");
+        play_on_speakers(&test_speech(0.35));
+        std::thread::sleep(Duration::from_millis(800));
+        let (first_saved, first_polisher) = first.stop().expect("first stops");
+        let first_polisher = first_polisher.expect("first is polished");
+        let t0 = std::time::Instant::now();
+
+        // Recording 2 straight away, while recording 1 is being polished.
+        let second = Session::start(app.handle(), &settings, models, &voice_model).expect("second starts");
+        let overlapped = !first_polisher.is_finished();
+        play_on_speakers(&test_speech(0.35));
+        std::thread::sleep(Duration::from_millis(800));
+        let first_done_during_second = first_polisher.is_finished();
+        let (second_saved, second_polisher) = second.stop().expect("second stops");
+        println!(
+            "first polish still running when recording 2 started: {overlapped}; finished during recording 2: {first_done_during_second}"
+        );
+
+        // Recording 2's live transcript was written while recording 1 was polishing.
+        assert!(said(&read(&second_saved.docx_path)), "recording 2 transcribed live");
+
+        first_polisher.wait();
+        println!("recording 1 polished after {:.1}s", t0.elapsed().as_secs_f32());
+        second_polisher.expect("second is polished").wait();
+        println!("recording 2 polished after {:.1}s", t0.elapsed().as_secs_f32());
+
+        for saved in [&first_saved, &second_saved] {
+            let doc = read(&saved.docx_path);
+            assert!(said(&doc), "{} has the speech", saved.docx_path);
+            assert!(doc.contains("Polished after recording"), "{} was polished, not skipped", saved.docx_path);
+        }
+        assert_ne!(first_saved.docx_path, second_saved.docx_path);
     }
 }

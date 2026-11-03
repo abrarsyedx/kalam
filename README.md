@@ -43,7 +43,7 @@ Everything runs on your device. No account, no cloud, no internet connection.</p
   - Each speaker gets their own colour on screen and in the `.docx`.
   - You can tell Kalam how many people are in the meeting, or let it work it out.
   - The older **You / Others** labelling (microphone vs computer audio) is still available.
-- **Files saved automatically** into a folder you choose: `Kalam_2026-10-16_09-30-00.mp3` and `Kalam_2026-10-16_09-30-00.docx`. The transcript is re-saved after every sentence, so a crash or power cut loses almost nothing.
+- **Files saved automatically**, each recording in its own folder inside the save location you choose: `Kalam_2026-10-16_09-30-00/` holds `Kalam_2026-10-16_09-30-00.mp3` and `Kalam_2026-10-16_09-30-00.docx`. The transcript is re-saved after every sentence, so a crash or power cut loses almost nothing.
 - **Blue & yellow design** with light and dark themes that follow the system.
 - **Open source (MIT)** and one code base: Rust core plus a web UI via [Tauri 2](https://tauri.app).
 
@@ -90,8 +90,8 @@ Download the installer for your system from the project's **Releases** page, or 
 
 | File | When to use |
 |---|---|
-| `Kalam_1.4.2_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
-| `Kalam_1.4.2_x64_en-US.msi` | For IT departments / Group Policy deployment. |
+| `Kalam_1.4.4_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
+| `Kalam_1.4.4_x64_en-US.msi` | For IT departments / Group Policy deployment. |
 
 1. Run the installer. The app isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 2. Start **Kalam** from the Start menu.
@@ -102,7 +102,7 @@ Requirements: a 64-bit CPU with AVX2 (any Intel Core from 2013 / AMD Ryzen or ne
 
 ### macOS 14.2+ (Apple Silicon or Intel)
 
-1. Open `Kalam_1.4.2_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.2_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
+1. Open `Kalam_1.4.4_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.4_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
 2. The app isn't notarised by Apple. The first time, open it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run this in Terminal:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Kalam.app
@@ -120,7 +120,8 @@ System-audio capture needs **macOS 14.6 or newer**. On 14.2–14.5 Kalam records
    - **Mute one source:** click the **microphone** or **speaker** icon next to its level meter, during a recording or before one. A muted source turns red and is left out of the MP3 and the transcript (it is silent there), while the other keeps recording. Click again to unmute.
    - Kalam **remembers** what is muted: it stays muted for the next recordings and after restarting Kalam, until you unmute it. When a recording starts with a source muted, Kalam reminds you.
    - **Scrolled up to reread something?** The live text stops following, and a **Latest** button appears at the bottom left. Click it to jump back to the newest text.
-3. **Stop** finishes the MP3 and saves the `.docx` right away. If polishing is on, the footer then shows **Polishing transcript… %**. When it finishes, the polished text replaces the live text on screen and in the `.docx`. Click **Skip** to keep the live version; starting a new recording also skips it.
+3. **Stop** finishes the MP3 and saves the `.docx` right away, both in the recording's own folder (**Transcript**, **Recording** and **Folder** in the footer open them). If polishing is on, the footer then shows **Polishing transcript… %**. When it finishes, the polished text replaces the live text on screen and in the `.docx`. Click **Skip** to keep the live version.
+   - **You can start the next recording straight away.** Polishing of the previous one carries on in the background (the footer says *Polishing the previous transcript…*) and its `.docx` is updated when it finishes. The new recording's live text always comes first: on a graphics card, polishing uses the gaps between live work; on a PC without one, polishing pauses while you record and resumes after **Stop** (the new recording's first sentence may then appear a little later). If several recordings are waiting, they are polished one after another.
 4. **Switch speech models** with the menu at the top right. The dot is green when the model is ready. The **GPU**/**CPU** badge shows where speech recognition runs. The menu is disabled while recording.
 5. **Settings** (gear icon, or `Ctrl+,` / `Cmd+,`): save folder, devices, model, language, names & terms, polishing, graphics card and more.
 
@@ -239,7 +240,7 @@ The installers are copied to `dist\`. On Windows the build output goes to a shor
 npm run build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.2_<arch>.dmg`.
+Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.4_<arch>.dmg`.
 
 The first build compiles whisper.cpp (with its GPU shaders) and LAME from source, which takes 10–20 minutes; later builds take a minute or two.
 
@@ -281,6 +282,10 @@ KALAM_TEST_WAV=jfk.wav cargo test --release streams_wav -- --ignored --nocapture
 KALAM_TEST_WAV=jfk.wav cargo test --release loopback -- --ignored --nocapture
 # A whole recording incl. pause/resume and polishing, in a mock app
 KALAM_TEST_WAV=jfk.wav cargo test --release full_session -- --ignored --nocapture
+# Two recordings back to back: the first keeps polishing while the second records (plays speech twice)
+KALAM_TEST_WAV=jfk.wav cargo test --release polishing_continues -- --ignored --nocapture
+# Same, feeding the transcriber directly (no audio devices); prints a timeline
+KALAM_TEST_WAV=jfk.wav cargo test --release polish_runs_behind -- --ignored --nocapture
 # Does MP3 compression change the transcript? Clean WAV vs. 128 kbps MP3 round trip (KALAM_TEST_KBPS=64 for other rates)
 KALAM_TEST_WAV=jfk.wav cargo test --release mp3_round_trip -- --ignored --nocapture
 # Reference draft for accuracy scoring: Kalam's most careful transcript of an excerpt (.docx + .txt + .wav),
@@ -308,7 +313,7 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
    ```bash
    git init
    git add .
-   git commit -m "Kalam 1.4.2"
+   git commit -m "Kalam 1.4.4"
    git branch -M main
    git remote add origin https://github.com/<your-account>/kalam.git
    git push -u origin main
@@ -316,8 +321,8 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
 2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
 3. To publish a release, push a version tag. The *Release* workflow (`release.yml`) creates a **draft release**, builds all three platforms and attaches their installers (`.exe`, `.msi`, `.dmg`); review it and click **Publish**:
    ```bash
-   git tag v1.4.2
-   git push origin v1.4.2
+   git tag v1.4.4
+   git push origin v1.4.4
    ```
 
 ---
@@ -331,7 +336,7 @@ Settings are saved as JSON at:
 
 | Setting | Default | Notes |
 |---|---|---|
-| Save location | `Documents/Kalam` | Any folder you can write to. |
+| Save location | `Documents/Kalam` | Any folder you can write to. Each recording gets its own sub-folder there, named after its date and time. Recordings from Kalam 1.4.2 and older stay where they are. |
 | Microphone / device | on / system default | |
 | Computer audio / device | on / system default | Records the chosen output (speakers/headset). |
 | Speech model | Accurate | *Accurate* (Large-v3 Turbo), *Fast* (Small.en) or *Custom* (any whisper.cpp `ggml-*.bin` file). Also switchable from the main window. |
