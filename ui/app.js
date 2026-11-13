@@ -1,6 +1,15 @@
 // Kalam UI. Talks to the Rust core through Tauri commands and events.
 "use strict";
 
+// Theme: light unless Settings → Appearance → Dark theme. The last choice is also kept
+// locally, so the window opens in the right theme before the settings have loaded.
+function applyTheme(theme) {
+  const dark = theme === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  try { localStorage.setItem("kalam-theme", dark ? "dark" : "light"); } catch { /* not essential */ }
+}
+try { if (localStorage.getItem("kalam-theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch { /* light */ }
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
@@ -47,8 +56,8 @@ new ResizeObserver(([entry]) => {
 }).observe(document.querySelector(".footer"));
 
 function setButton(btn, icon, label) {
-  btn.querySelector("use").setAttribute("href", `#i-${icon}`);
-  btn.querySelector("span").textContent = label;
+  btn.querySelector(".icon").textContent = icon === "play" ? "play_arrow" : icon;
+  btn.querySelector(".label").textContent = label;
 }
 
 function setMode(next) {
@@ -107,8 +116,8 @@ function renderMute() {
     meter.disabled = !canMute;
     meter.classList.toggle("muted", muted);
     meter.setAttribute("aria-pressed", String(muted));
-    const icon = source === "mic" ? "mic" : "speaker";
-    meter.querySelector("use").setAttribute("href", `#i-${icon}${muted ? "-off" : ""}`);
+    const icon = source === "mic" ? (muted ? "mic_off" : "mic") : (muted ? "volume_off" : "volume_up");
+    meter.querySelector(".icon").textContent = icon;
     const device = sourceDevices[source] ? `: ${sourceDevices[source]}` : source === "system" ? " (Teams, Zoom, Meet…)" : "";
     const hint = !canMute ? "\nTurned off in Settings."
       : muted ? `\nMuted: not ${recording ? "being " : ""}recorded or transcribed. Click to unmute.`
@@ -510,6 +519,7 @@ async function openSettings() {
   f("f-mic").checked = settings.captureMic;
   f("f-sys").checked = settings.captureSystem;
   f("f-preview").checked = settings.livePreview;
+  f("f-theme").checked = settings.theme === "dark";
   f("f-vocab").value = settings.vocabulary || "";
   f("f-polish").value = settings.polish || "auto";
   f("f-gpu").value = settings.gpu || "auto";
@@ -583,6 +593,9 @@ document.querySelectorAll('input[name="f-model"]').forEach((radio) =>
   })
 );
 el.dialog.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => el.dialog.close()));
+// The theme switch previews at once; closing without saving returns to the saved theme.
+f("f-theme").addEventListener("change", () => applyTheme(f("f-theme").checked ? "dark" : "light"));
+el.dialog.addEventListener("close", () => { if (settings) applyTheme(settings.theme); });
 
 el.form.addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -603,6 +616,7 @@ el.form.addEventListener("submit", async (ev) => {
     vocabulary: f("f-vocab").value.trim(),
     polish: f("f-polish").value,
     gpu: f("f-gpu").value,
+    theme: f("f-theme").checked ? "dark" : "light",
   };
   if (!next.captureMic && !next.captureSystem) {
     toast("Turn on at least one audio source.", "error");
@@ -665,6 +679,7 @@ async function boot() {
   ]);
 
   [status, settings] = await Promise.all([invoke("get_status"), invoke("get_settings")]);
+  applyTheme(settings.theme);
   setModelStatus(status.model);
   setGpuStatus(status.gpu);
   if (status.polishing) setPolish({ state: "running", progress: 0 });

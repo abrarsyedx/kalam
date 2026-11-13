@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- The Kalam logo. All other icons are Material Symbols (ui/fonts), written as <span class="icon">name</span>. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-nib" viewBox="0 0 1024 1024">
       <path d="M168 736 Q183 700 198 736 Q213 820 228 736 Q243 600 258 736 Q273 900 288 736 Q303 584 318 736 Q333 848 348 736 Q363 680 378 736 Q393 770 408 736" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
@@ -17,20 +18,6 @@
         <circle cx="512" cy="566" r="40" fill="var(--logo-cut, var(--surface))"/>
       </g>
     </symbol>
-    <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor"/></symbol>
-    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></symbol>
-    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
-    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
-    <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4z"/></symbol>
-    <symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
-    <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></g></symbol>
-    <symbol id="i-speaker" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
-    <symbol id="i-mic-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16"/></g></symbol>
-    <symbol id="i-speaker-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></symbol>
-    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13M6 12l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-    <symbol id="i-doc" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></g></symbol>
-    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-    <symbol id="i-note" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></g></symbol>
   </svg>
 
   <header class="topbar">
@@ -44,10 +31,10 @@
         <select id="model-select" aria-label="Speech model"></select>
         <span id="model-state" class="model-state"></span>
         <span id="gpu-badge" class="gpu-badge" hidden></span>
-        <svg class="chev" aria-hidden="true"><use href="#i-chev"/></svg>
+        <span class="icon chev" aria-hidden="true">arrow_drop_down</span>
       </label>
-      <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
-        <svg><use href="#i-gear"/></svg>
+      <button id="btn-settings" class="icon-btn" title="Settings (Ctrl+,)" aria-label="Settings">
+        <span class="icon" aria-hidden="true">settings</span>
       </button>
     </div>
   </header>
@@ -55,13 +42,13 @@
   <section class="console">
     <div class="transport">
       <button id="btn-record" class="btn btn-record" title="Start recording and transcribing">
-        <svg><use href="#i-record"/></svg><span>Record</span>
+        <span class="rec-dot" aria-hidden="true"></span><span class="label">Record</span>
       </button>
-      <button id="btn-pause" class="btn" disabled title="Pause recording and transcribing">
-        <svg><use href="#i-pause"/></svg><span>Pause</span>
+      <button id="btn-pause" class="btn tonal" disabled title="Pause recording and transcribing">
+        <span class="icon filled" aria-hidden="true">pause</span><span class="label">Pause</span>
       </button>
-      <button id="btn-stop" class="btn" disabled title="Stop and save the .mp3 and .docx">
-        <svg><use href="#i-stop"/></svg><span>Stop</span>
+      <button id="btn-stop" class="btn outlined" disabled title="Stop and save the .mp3 and .docx">
+        <span class="icon filled" aria-hidden="true">stop</span><span class="label">Stop</span>
       </button>
     </div>
     <div class="clock">
@@ -70,11 +57,11 @@
     </div>
     <div class="meters">
       <button type="button" class="meter" id="meter-mic" aria-pressed="false" disabled title="Microphone level">
-        <svg><use href="#i-mic"/></svg>
+        <span class="meter-icon"><span class="icon" aria-hidden="true">mic</span></span>
         <div class="bar"><div class="fill"></div></div>
       </button>
       <button type="button" class="meter" id="meter-sys" aria-pressed="false" disabled title="Computer audio level (Teams, Zoom, Meet…)">
-        <svg><use href="#i-speaker"/></svg>
+        <span class="meter-icon"><span class="icon" aria-hidden="true">volume_up</span></span>
         <div class="bar"><div class="fill"></div></div>
       </button>
     </div>
@@ -91,12 +78,12 @@
     <p id="preview" class="line preview" hidden><span class="text"></span></p>
   </main>
   <button id="btn-jump" class="jump" type="button" hidden title="Scroll to the latest transcript">
-    <svg><use href="#i-down"/></svg><span>Latest</span>
+    <span class="icon" aria-hidden="true">arrow_downward</span><span>Latest</span>
   </button>
 
   <footer class="footer">
     <div class="saving-to">
-      <svg><use href="#i-folder"/></svg>
+      <span class="icon" aria-hidden="true">folder</span>
       <span>Saving to</span>
       <button id="btn-folder" class="link" title="Open folder"></button>
     </div>
@@ -106,10 +93,10 @@
       <button id="btn-polish-skip" class="link small" title="Skip polishing; the live transcripts stay saved">Skip</button>
     </div>
     <div id="saved" class="saved" hidden>
-      <span class="saved-label">Saved</span>
-      <button id="btn-open-docx" class="pill"><svg><use href="#i-doc"/></svg>Transcript</button>
-      <button id="btn-open-mp3" class="pill"><svg><use href="#i-note"/></svg>Recording</button>
-      <button id="btn-open-folder" class="pill"><svg><use href="#i-folder"/></svg>Folder</button>
+      <span class="saved-label"><span class="icon filled" aria-hidden="true">check_circle</span>Saved</span>
+      <button id="btn-open-docx" class="pill"><span class="icon" aria-hidden="true">description</span>Transcript</button>
+      <button id="btn-open-mp3" class="pill"><span class="icon" aria-hidden="true">audio_file</span>Recording</button>
+      <button id="btn-open-folder" class="pill"><span class="icon" aria-hidden="true">folder_open</span>Folder</button>
     </div>
   </footer>
 
@@ -119,33 +106,47 @@
     <form id="settings-form" method="dialog">
       <header class="dlg-head">
         <h2>Settings</h2>
-        <button type="button" class="icon-btn" data-close aria-label="Close">✕</button>
+        <button type="button" class="icon-btn" data-close aria-label="Close" title="Close"><span class="icon" aria-hidden="true">close</span></button>
       </header>
 
       <div class="dlg-body">
         <fieldset>
+          <legend>Appearance</legend>
+          <label class="check"><span>Dark theme <em>Light is the default</em></span><input id="f-theme" class="switch" type="checkbox" role="switch" /></label>
+        </fieldset>
+
+        <fieldset>
           <legend>Save location</legend>
-          <p class="hint">Recordings (.mp3) and transcripts (.docx) are saved here.</p>
+          <p class="hint">Recordings (.mp3) and transcripts (.docx) are saved here, one folder per recording.</p>
           <div class="row">
-            <input id="f-output" type="text" spellcheck="false" />
-            <button type="button" id="f-output-browse" class="btn btn-small">Browse…</button>
+            <label class="field">
+              <span>Folder</span>
+              <input id="f-output" type="text" spellcheck="false" />
+            </label>
+            <button type="button" id="f-output-browse" class="btn outlined">Browse…</button>
           </div>
           <button type="button" id="f-output-reset" class="link small">Use default (Documents/Kalam)</button>
         </fieldset>
 
         <fieldset>
           <legend>Audio sources</legend>
-          <label class="check"><input id="f-mic" type="checkbox" /> <span>Microphone</span></label>
-          <select id="f-mic-device" class="indent"></select>
-          <label class="check"><input id="f-sys" type="checkbox" /> <span>Computer audio <em>(Teams, Zoom, Google Meet, browser…)</em></span></label>
-          <select id="f-sys-device" class="indent"></select>
-          <p class="hint indent" id="sys-hint"></p>
+          <label class="check"><span>Microphone</span><input id="f-mic" class="switch" type="checkbox" role="switch" /></label>
+          <label class="field">
+            <span>Microphone device</span>
+            <select id="f-mic-device"></select>
+          </label>
+          <label class="check"><span>Computer audio <em>Teams, Zoom, Google Meet, browser…</em></span><input id="f-sys" class="switch" type="checkbox" role="switch" /></label>
+          <label class="field">
+            <span>Playback device</span>
+            <select id="f-sys-device"></select>
+          </label>
+          <p class="hint" id="sys-hint"></p>
         </fieldset>
 
         <fieldset>
           <legend>Transcription</legend>
-          <div class="field">
-            <span>Speech model</span>
+          <div class="model-group">
+            <span class="group-title">Speech model</span>
             <div class="model-options" role="radiogroup" aria-label="Speech model">
               <label class="model-option">
                 <input type="radio" name="f-model" value="accurate" />
@@ -163,7 +164,7 @@
                   <small id="f-model-path">Any whisper.cpp ggml-*.bin file</small></span>
               </label>
             </div>
-            <button type="button" id="f-model-browse" class="btn btn-small">Choose model file…</button>
+            <button type="button" id="f-model-browse" class="btn outlined">Choose model file…</button>
           </div>
           <label class="field">
             <span>Language</span>
@@ -174,7 +175,7 @@
             <span>CPU threads</span>
             <select id="f-threads"></select>
           </label>
-          <label class="check"><input id="f-preview" type="checkbox" /> <span>Show live preview while someone is speaking</span></label>
+          <label class="check"><span>Live preview <em>Show the words while someone is still speaking</em></span><input id="f-preview" class="switch" type="checkbox" role="switch" /></label>
           <label class="field">
             <span>Speaker labels</span>
             <select id="f-speakers">
@@ -184,7 +185,7 @@
             </select>
             <span class="hint">Live labels are provisional; after you press Stop, Kalam compares all voices in the recording and corrects them.</span>
           </label>
-          <label class="field indent-field" id="f-expected-row">
+          <label class="field" id="f-expected-row">
             <span>Number of speakers</span>
             <select id="f-expected"></select>
             <span class="hint">Set it if you know how many people will talk; it makes the labels more reliable.</span>
@@ -216,7 +217,7 @@
               <option value="off">Off: always use the processor (CPU)</option>
             </select>
           </label>
-          <button type="button" id="f-gpu-recheck" class="btn btn-small">Test graphics card again</button>
+          <button type="button" id="f-gpu-recheck" class="btn outlined">Test graphics card again</button>
         </fieldset>
 
         <fieldset>
@@ -237,7 +238,7 @@
       </div>
 
       <footer class="dlg-foot">
-        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="button" class="btn text" data-close>Cancel</button>
         <button type="submit" id="f-save" class="btn btn-primary">Save</button>
       </footer>
     </form>

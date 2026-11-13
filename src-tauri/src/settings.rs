@@ -41,6 +41,8 @@ pub struct Settings {
     /// the MP3, not transcribed) until unmuted. Kept across recordings and restarts.
     pub mic_muted: bool,
     pub system_muted: bool,
+    /// Window theme: "light" (default) or "dark". Does not follow the OS setting.
+    pub theme: String,
 }
 
 impl Default for Settings {
@@ -64,6 +66,7 @@ impl Default for Settings {
             vocabulary: String::new(),
             mic_muted: false,
             system_muted: false,
+            theme: THEME_LIGHT.into(),
         }
     }
 }
@@ -77,6 +80,8 @@ pub const GPU_OFF: &str = "off";
 pub const POLISH_AUTO: &str = "auto";
 pub const POLISH_ALWAYS: &str = "always";
 pub const POLISH_OFF: &str = "off";
+pub const THEME_LIGHT: &str = "light";
+pub const THEME_DARK: &str = "dark";
 pub const SPEAKERS_VOICE: &str = "voice";
 pub const SPEAKERS_SOURCE: &str = "source";
 pub const SPEAKERS_OFF: &str = "off";
@@ -133,6 +138,9 @@ impl Settings {
             self.polish = POLISH_AUTO.into();
         }
         self.vocabulary = self.vocabulary.trim().to_string();
+        if self.theme != THEME_DARK {
+            self.theme = THEME_LIGHT.into();
+        }
         if self.language.trim().is_empty() {
             self.language = "en".into();
         }
@@ -191,6 +199,15 @@ mod tests {
         let muted = Settings { mic_muted: true, ..Settings::default() };
         let reloaded = load_json(&serde_json::to_string(&muted).unwrap());
         assert!(reloaded.mic_muted && !reloaded.system_muted);
+    }
+
+    #[test]
+    fn theme_is_light_unless_dark_was_chosen() {
+        // Settings from before the theme switch open in the light theme.
+        assert_eq!(load_json(r#"{"model":"fast"}"#).theme, THEME_LIGHT);
+        assert_eq!(Settings::default().theme, THEME_LIGHT);
+        assert_eq!(load_json(r#"{"theme":"dark"}"#).theme, THEME_DARK);
+        assert_eq!(load_json(r#"{"theme":"purple"}"#).theme, THEME_LIGHT);
     }
 
     #[test]

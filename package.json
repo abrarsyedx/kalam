@@ -1,6 +1,6 @@
 {
   "name": "kalam",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": true,
   "description": "Kalam (\"pen\") - offline meeting recorder and live transcriber",
   "license": "MIT",

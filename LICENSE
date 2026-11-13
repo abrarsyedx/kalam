@@ -37,5 +37,11 @@ Third-party components bundled in Kalam builds
   speaker labels - https://github.com/k2-fsa/sherpa-onnx
 - NVIDIA TitaNet-small voiceprint model, covered by the NeMo Toolkit license
   (Apache-2.0) - https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small
+- Roboto font (SIL Open Font License 1.1, The Roboto Project Authors) -
+  https://github.com/googlefonts/roboto-classic. Bundled in ui/fonts with its
+  license text (ui/fonts/OFL-Roboto.txt).
+- Material Symbols icon font, subset (Apache-2.0, Google) -
+  https://github.com/google/material-design-icons. Bundled in ui/fonts with
+  its license text (ui/fonts/LICENSE-MaterialSymbols.txt).
 - Tauri (MIT/Apache-2.0), cpal (Apache-2.0), docx-rs (MIT) and other Rust
   crates under their respective licenses (see src-tauri/Cargo.lock).

@@ -44,7 +44,7 @@ Everything runs on your device. No account, no cloud, no internet connection.</p
   - You can tell Kalam how many people are in the meeting, or let it work it out.
   - The older **You / Others** labelling (microphone vs computer audio) is still available.
 - **Files saved automatically**, each recording in its own folder inside the save location you choose: `Kalam_2026-10-16_09-30-00/` holds `Kalam_2026-10-16_09-30-00.mp3` and `Kalam_2026-10-16_09-30-00.docx`. The transcript is re-saved after every sentence, so a crash or power cut loses almost nothing.
-- **Blue & yellow design** with light and dark themes that follow the system.
+- **Material 3 design** in blue & yellow: light theme by default, dark theme in **Settings → Appearance**. Fonts and icons ship with the app; nothing is loaded from the internet.
 - **Open source (MIT)** and one code base: Rust core plus a web UI via [Tauri 2](https://tauri.app).
 
 ### Why Whisper and not a general LLM?
@@ -90,8 +90,8 @@ Download the installer for your system from the project's **Releases** page, or 
 
 | File | When to use |
 |---|---|
-| `Kalam_1.4.4_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
-| `Kalam_1.4.4_x64_en-US.msi` | For IT departments / Group Policy deployment. |
+| `Kalam_1.4.5_x64-setup.exe` | **Recommended.** Installs for the current user, no admin rights needed. |
+| `Kalam_1.4.5_x64_en-US.msi` | For IT departments / Group Policy deployment. |
 
 1. Run the installer. The app isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 2. Start **Kalam** from the Start menu.
@@ -102,7 +102,7 @@ Requirements: a 64-bit CPU with AVX2 (any Intel Core from 2013 / AMD Ryzen or ne
 
 ### macOS 14.2+ (Apple Silicon or Intel)
 
-1. Open `Kalam_1.4.4_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.4_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
+1. Open `Kalam_1.4.5_aarch64.dmg` (Apple Silicon) or `Kalam_1.4.5_x64.dmg` (Intel) and drag **Kalam** to **Applications**.
 2. The app isn't notarised by Apple. The first time, open it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. Or run this in Terminal:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Kalam.app
@@ -240,7 +240,7 @@ The installers are copied to `dist\`. On Windows the build output goes to a shor
 npm run build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.4_<arch>.dmg`.
+Output: `src-tauri/target/release/bundle/macos/Kalam.app` and `dmg/Kalam_1.4.5_<arch>.dmg`.
 
 The first build compiles whisper.cpp (with its GPU shaders) and LAME from source, which takes 10–20 minutes; later builds take a minute or two.
 
@@ -313,7 +313,7 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
    ```bash
    git init
    git add .
-   git commit -m "Kalam 1.4.4"
+   git commit -m "Kalam 1.4.5"
    git branch -M main
    git remote add origin https://github.com/<your-account>/kalam.git
    git push -u origin main
@@ -321,8 +321,8 @@ The workflows in `.github/workflows/` build **Windows x64** (`windows.yml`), **m
 2. Open the repository's **Actions** tab. When the *Windows*, *macOS (Apple Silicon)* and *macOS (Intel)* runs finish (~20–30 min), download the installers from each run's **Artifacts** section.
 3. To publish a release, push a version tag. The *Release* workflow (`release.yml`) creates a **draft release**, builds all three platforms and attaches their installers (`.exe`, `.msi`, `.dmg`); review it and click **Publish**:
    ```bash
-   git tag v1.4.4
-   git push origin v1.4.4
+   git tag v1.4.5
+   git push origin v1.4.5
    ```
 
 ---
@@ -407,7 +407,8 @@ Vulkan already uses NVIDIA cards. For CUDA instead (Windows/Linux, needs the CUD
 
 ```
 kalam/
-├─ ui/                      Front end (plain HTML/CSS/JS, no build step)
+├─ ui/                      Front end (plain HTML/CSS/JS, no build step; Material 3 styles)
+│  └─ fonts/                Roboto + a Material Symbols subset, bundled for offline use
 ├─ assets/kalam-icon.svg    Logo source; `npm run icons` regenerates all icon sizes
 ├─ scripts/                 Windows build script, model download helpers, transcript scorer
 ├─ .github/workflows/       CI: builds installers for Windows + macOS
